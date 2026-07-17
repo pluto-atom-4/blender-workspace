@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Blender backup files
+*.blend1
+*.blend2
+
+# OS
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json

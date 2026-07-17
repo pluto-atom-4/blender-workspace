@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "blender-local-agent": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/home/pluto-atom-4/blender-workspace/blender-mcp",
+        "run",
+        "blender_mcp.py"
+      ]
+    }
+  }
+}
+
