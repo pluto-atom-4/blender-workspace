@@ -1,5 +1,6 @@
 """Parametric two-wheeled inverted pendulum robot sized for the Tamiya
-55mm Slim Tire Set (Tamiya 70193). All dimensions are millimeters."""
+55mm Slim Tire Set (Tamiya 70193), driven by two Dynamixel XL330 smart
+servos. All dimensions are millimeters."""
 
 import bpy
 import math
@@ -42,6 +43,15 @@ BALSA_THICKNESS = 3.0     # main deck sheet stock
 POLY_THICKNESS = 5.0      # rigid motor bracket stock
 CHASSIS_WIDTH = 85.0      # narrowed to fit the 100mm hex axle kit
 
+# Dynamixel XL330 smart servo body envelope
+XL330_WIDTH = 20.0        # X-axis body cross-section (Y in world space)
+XL330_HEIGHT = 34.0       # body cross-section (Z in world space)
+XL330_DEPTH = 26.0        # along the output-shaft axis (X in world space)
+
+# Compact horn-to-wheel adapter hub
+HUB_ADAPTER_DIAMETER = 14.0
+HUB_ADAPTER_LENGTH = 4.0
+
 WHEEL_RADIUS = WHEEL_DIAMETER / 2.0
 
 AXLE_LENGTH = 100.0
@@ -51,32 +61,28 @@ AXLE_CIRCUMRADIUS = AXLE_ACROSS_FLATS / math.sqrt(3)
 CHASSIS_WHEEL_GAP = 2.0   # clearance between chassis edge and wheel inner face
 WHEEL_X = CHASSIS_WIDTH / 2.0 + CHASSIS_WHEEL_GAP + WHEEL_WIDTH / 2.0
 
-# Ground reference: wheel bottom sits on Z = 0, so axle centerline is one
-# wheel-radius up.
+# Ground reference: wheel bottom sits on Z = 0, so the wheel/axle/actuator
+# shaft centerline is one wheel-radius up. The XL330 output horn is assumed
+# centered on the actuator's own W x H cross-section (no offset given in the
+# hardware spec), so the actuator body straddles that same centerline.
 AXLE_Z = WHEEL_RADIUS
 
 LOWER_DECK_WIDTH = CHASSIS_WIDTH
 LOWER_DECK_DEPTH = 60.0
-# Axle-center to deck-bottom clearance: must clear the hex axle radius plus
-# a full motor-mount bracket (POLY_THICKNESS) stacked underneath the deck.
-LOWER_DECK_CLEARANCE = 12.0
-LOWER_DECK_Z_BOTTOM = AXLE_Z + LOWER_DECK_CLEARANCE
+
+# Actuator body, centered on the shaft line.
+ACTUATOR_Z_BOTTOM = AXLE_Z - XL330_HEIGHT / 2.0
+ACTUATOR_Z_TOP = AXLE_Z + XL330_HEIGHT / 2.0
+
+# Motor mount bracket sits flush on top of the actuator and flush under the
+# lower deck -- thickness fills exactly the actuator-to-deck gap.
+MOUNT_Z_BOTTOM = ACTUATOR_Z_TOP
+MOUNT_Z_TOP = MOUNT_Z_BOTTOM + POLY_THICKNESS
+MOUNT_Z_CENTER = (MOUNT_Z_BOTTOM + MOUNT_Z_TOP) / 2.0
+
+LOWER_DECK_Z_BOTTOM = MOUNT_Z_TOP
 LOWER_DECK_Z_TOP = LOWER_DECK_Z_BOTTOM + BALSA_THICKNESS
 LOWER_DECK_Z_CENTER = (LOWER_DECK_Z_BOTTOM + LOWER_DECK_Z_TOP) / 2.0
-
-# Motor mounts: flat poly brackets flush against the underside of the lower
-# deck, offset from centerline in X so they clear the rotating axle.
-MOUNT_WIDTH = 30.0     # X
-MOUNT_DEPTH = 20.0     # Y
-MOUNT_X_OFFSET = 20.0
-MOUNT_Z_TOP = LOWER_DECK_Z_BOTTOM
-MOUNT_Z_BOTTOM = MOUNT_Z_TOP - POLY_THICKNESS
-MOUNT_Z_CENTER = (MOUNT_Z_TOP + MOUNT_Z_BOTTOM) / 2.0
-
-# Representative micro-servo geometry attached to the outboard edge of each
-# mount (offset clear of the bracket footprint and the wheel inner face).
-SERVO_SIZE = (6.0, 12.0, POLY_THICKNESS)  # X, Y, Z
-SERVO_GAP = 1.0
 
 UPPER_DECK_WIDTH = CHASSIS_WIDTH
 UPPER_DECK_DEPTH = LOWER_DECK_DEPTH
@@ -129,27 +135,64 @@ root.name = "Tamiya_Inverted_Pendulum"
 
 created = []
 
-# ---------------------------------------------------------------------------
-# Wheels
-# ---------------------------------------------------------------------------
-
-created.append(add_cylinder(
-    "Tamiya_55mm_Left_Wheel", WHEEL_RADIUS, WHEEL_WIDTH,
-    (-WHEEL_X, 0.0, AXLE_Z), axis='X',
-))
-created.append(add_cylinder(
-    "Tamiya_55mm_Right_Wheel", WHEEL_RADIUS, WHEEL_WIDTH,
-    (WHEEL_X, 0.0, AXLE_Z), axis='X',
-))
 
 # ---------------------------------------------------------------------------
-# Hex axle
+# Wheels, horn-to-wheel adapter hubs, and XL330 actuators
 # ---------------------------------------------------------------------------
 
-created.append(add_cylinder(
+actuators = {}
+wheels = {}
+hubs = {}
+
+for side, x_sign in (("Left", -1.0), ("Right", 1.0)):
+    wheel_x = x_sign * WHEEL_X
+    wheel_inner_x = x_sign * (WHEEL_X - WHEEL_WIDTH / 2.0)
+
+    wheel = add_cylinder(
+        f"Tamiya_55mm_{side}_Wheel", WHEEL_RADIUS, WHEEL_WIDTH,
+        (wheel_x, 0.0, AXLE_Z), axis='X',
+    )
+    created.append(wheel)
+    wheels[side] = wheel
+
+    hub_outer_x = wheel_inner_x
+    hub_inner_x = hub_outer_x - x_sign * HUB_ADAPTER_LENGTH
+    hub_center_x = (hub_outer_x + hub_inner_x) / 2.0
+    hub = add_cylinder(
+        f"Wheel_Hub_Adapter_{side}", HUB_ADAPTER_DIAMETER / 2.0,
+        HUB_ADAPTER_LENGTH, (hub_center_x, 0.0, AXLE_Z), axis='X',
+    )
+    created.append(hub)
+    hubs[side] = hub
+
+    actuator_outer_x = hub_inner_x
+    actuator_inner_x = actuator_outer_x - x_sign * XL330_DEPTH
+    actuator_center_x = (actuator_outer_x + actuator_inner_x) / 2.0
+    actuator = add_box(
+        f"Dynamixel_XL330_{side}",
+        (XL330_DEPTH, XL330_WIDTH, XL330_HEIGHT),
+        (actuator_center_x, 0.0, AXLE_Z),
+    )
+    created.append(actuator)
+    actuators[side] = actuator
+
+    mount = add_box(
+        f"Poly_Motor_Mount_{side}",
+        (XL330_DEPTH, XL330_WIDTH, POLY_THICKNESS),
+        (actuator_center_x, 0.0, MOUNT_Z_CENTER),
+    )
+    created.append(mount)
+
+# ---------------------------------------------------------------------------
+# Hex axle -- structural alignment backbone between the two actuator
+# outputs, coaxial with the wheel/motor shaft line.
+# ---------------------------------------------------------------------------
+
+axle = add_cylinder(
     "Hex_Axle_100mm", AXLE_CIRCUMRADIUS, AXLE_LENGTH,
     (0.0, 0.0, AXLE_Z), vertices=6, axis='X',
-))
+)
+created.append(axle)
 
 # ---------------------------------------------------------------------------
 # Lower deck (balsa)
@@ -160,25 +203,6 @@ created.append(add_box(
     (LOWER_DECK_WIDTH, LOWER_DECK_DEPTH, BALSA_THICKNESS),
     (0.0, 0.0, LOWER_DECK_Z_CENTER),
 ))
-
-# ---------------------------------------------------------------------------
-# Motor mounts (poly) + representative micro servos
-# ---------------------------------------------------------------------------
-
-for side, x_sign in (("Left", -1.0), ("Right", 1.0)):
-    mount_x = x_sign * MOUNT_X_OFFSET
-    created.append(add_box(
-        f"Poly_Motor_Mount_{side}",
-        (MOUNT_WIDTH, MOUNT_DEPTH, POLY_THICKNESS),
-        (mount_x, 0.0, MOUNT_Z_CENTER),
-    ))
-
-    servo_x = mount_x + x_sign * (MOUNT_WIDTH / 2.0 + SERVO_GAP + SERVO_SIZE[0] / 2.0)
-    created.append(add_box(
-        f"Micro_Servo_{side}",
-        SERVO_SIZE,
-        (servo_x, 0.0, MOUNT_Z_CENTER),
-    ))
 
 # ---------------------------------------------------------------------------
 # Upper deck (balsa) on four standoffs
@@ -228,12 +252,14 @@ def boxes_overlap(a, b, eps=1e-6):
             az0 < bz1 - eps and bz0 < az1 - eps)
 
 
-# The hex axle is expected to pass through both wheel hubs (that is what an
-# axle does); it is not a structural clash and is excluded from the check.
-ALLOWED_OVERLAPS = {
-    frozenset(("Tamiya_55mm_Left_Wheel", "Hex_Axle_100mm")),
-    frozenset(("Tamiya_55mm_Right_Wheel", "Hex_Axle_100mm")),
-}
+# The 100mm hex axle is the coaxial alignment backbone: by design it
+# telescopes through the wheel hub, the adapter hub, and the actuator body
+# on both sides. That is the intended fit, not a structural clash.
+ALLOWED_OVERLAPS = set()
+for side in ("Left", "Right"):
+    ALLOWED_OVERLAPS.add(frozenset((f"Tamiya_55mm_{side}_Wheel", "Hex_Axle_100mm")))
+    ALLOWED_OVERLAPS.add(frozenset((f"Wheel_Hub_Adapter_{side}", "Hex_Axle_100mm")))
+    ALLOWED_OVERLAPS.add(frozenset((f"Dynamixel_XL330_{side}", "Hex_Axle_100mm")))
 
 mesh_objs = [o for o in created if o.type == 'MESH']
 bboxes = {o.name: world_bbox(o) for o in mesh_objs}
@@ -247,9 +273,10 @@ for i, a in enumerate(mesh_objs):
 
 print("=" * 60)
 print(f"TOTAL_HEIGHT (ground to top of upper deck): {TOTAL_HEIGHT:.2f} mm")
-print(f"Wheel outer diameter top: {WHEEL_DIAMETER:.2f} mm")
-print(f"Lower deck Z: {LOWER_DECK_Z_BOTTOM:.2f} - {LOWER_DECK_Z_TOP:.2f} mm")
+print(f"Wheel outer diameter: {WHEEL_DIAMETER:.2f} mm")
+print(f"Actuator Z: {ACTUATOR_Z_BOTTOM:.2f} - {ACTUATOR_Z_TOP:.2f} mm")
 print(f"Motor mount Z: {MOUNT_Z_BOTTOM:.2f} - {MOUNT_Z_TOP:.2f} mm")
+print(f"Lower deck Z: {LOWER_DECK_Z_BOTTOM:.2f} - {LOWER_DECK_Z_TOP:.2f} mm")
 print(f"Upper deck Z: {UPPER_DECK_Z_BOTTOM:.2f} - {UPPER_DECK_Z_TOP:.2f} mm")
 if overlaps:
     print(f"INTERSECTION CHECK: FAILED, {len(overlaps)} overlapping pair(s):")
@@ -257,6 +284,7 @@ if overlaps:
         print(f"  {a} <-> {b}")
 else:
     print("INTERSECTION CHECK: PASSED, no overlapping mesh bounding boxes.")
+    print("  (axle intentionally telescopes through hub -> actuator on both sides)")
 print("=" * 60)
 
 # Save the built scene next to the render output area for inspection.
