@@ -1,3 +1,5 @@
+.idea
+
 # Python
 __pycache__/
 *.pyc
@@ -13,3 +15,8 @@ __pycache__/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+*.png
+
+gh-issue*.*
+issue*.json
