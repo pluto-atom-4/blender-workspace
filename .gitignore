@@ -18,5 +18,7 @@ __pycache__/
 
 *.png
 
+blender-project/renders/*.mp4
+
 gh-issue*.*
 issue*.json
