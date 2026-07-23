@@ -678,11 +678,15 @@ prev_led_hex = None
 for i, state in enumerate(states):
     frame = i + 1
 
-    root.location.x = state["x"] * SIM_TO_MM
-    root.keyframe_insert(data_path="location", index=0, frame=frame)
+    # Wheel spin axis is X (fixed by every prior script -- Left/Right wheels
+    # sit at +/-WHEEL_X along X). Rolling contact on the X-Y ground plane
+    # then only works out geometrically along Y, so travel is Y and chassis
+    # tip (which must fall the way it rolls to catch itself) rotates about X.
+    root.location.y = state["x"] * SIM_TO_MM
+    root.keyframe_insert(data_path="location", index=1, frame=frame)
 
-    chassis_pivot.rotation_euler.y = state["theta"]
-    chassis_pivot.keyframe_insert(data_path="rotation_euler", index=1, frame=frame)
+    chassis_pivot.rotation_euler.x = state["theta"]
+    chassis_pivot.keyframe_insert(data_path="rotation_euler", index=0, frame=frame)
 
     if state["phase"] == "CONSTRUCTION":
         chassis_scale = max(0.0, min(1.0, state["p_progress"] * 1.5))
