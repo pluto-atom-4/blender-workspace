@@ -1,0 +1,27 @@
+{
+  "enabledMcpjsonServers": [
+    "blender-local-agent"
+  ],
+  "permissions": {
+    "allow": [
+      "mcp__blender-local-agent__run_blender_python",
+      "mcp__blender-local-agent__check_blender_live_status"
+    ],
+    "ask": [
+      "mcp__blender-local-agent__run_blender_python_live"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-destructive-bash.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

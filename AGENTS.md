@@ -3,7 +3,15 @@
 Instructions for AI agents (Claude Code or otherwise) working in this
 repository. See also [CLAUDE.md](CLAUDE.md) for the canonical Claude Code
 project instructions — this file restates the same rules in
-tool-agnostic form.
+tool-agnostic form. GitHub Copilot reads
+[.github/copilot-instructions.md](.github/copilot-instructions.md) instead,
+which is a manually-kept-in-sync trim of this file.
+
+Tool permissions and safety hooks live in
+[.claude/settings.json](.claude/settings.json) (committed baseline) and
+`.claude/settings.local.json` (personal overrides, gitignored) — see that
+file for the exact allow/ask rules and the `PreToolUse` hook that blocks
+destructive Bash commands.
 
 ## Project layout
 
@@ -62,6 +70,15 @@ interchangeable:
   `run_blender_python_live`, with higher stakes — it runs against a live
   session instead of a disposable process, so an untrusted or buggy script
   can corrupt scene state the user is actively working on.
+
+## Project skills
+
+Claude Code auto-discovers project skills under `.claude/skills/<name>/SKILL.md`
+(name + description frontmatter, invoked by name or by matching description).
+`.claude/skills/render-multi-angle/SKILL.md` documents the existing
+default/front/side/top render pattern from [SKILLS.md](SKILLS.md) — add new
+skills there as the script inventory grows rather than only updating the
+table in SKILLS.md.
 
 ## Naming conventions
 
