@@ -22,3 +22,5 @@ blender-project/renders/*.mp4
 
 gh-issue*.*
 issue*.json
+
+chore-idea.md
