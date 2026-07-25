@@ -1,4 +1,11 @@
+@AGENTS.md
+
 # Blender Agentic Workspace Guide
+
+## Cross-tool configuration
+- `.claude/settings.json` — committed baseline: MCP tool permissions and a `PreToolUse` hook (`.claude/hooks/block-destructive-bash.sh`) that blocks `rm -rf` / `git reset --hard` / `git push --force` before they run. `.claude/settings.local.json` layers personal overrides on top (gitignored).
+- `.github/copilot-instructions.md` — GitHub Copilot's equivalent of this file, kept in sync manually (Copilot doesn't read CLAUDE.md).
+- No linter/formatter/test suite is configured in this repo yet (no `black`/`flake8`/`pytest` installed) — don't assume `wc -l`/`jq`/build-command gates exist beyond what's actually wired up above.
 
 ## Project Structure
 - `blender-mcp/`: Contains the localized Python FastMCP engine server.
