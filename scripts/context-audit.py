@@ -142,6 +142,7 @@ def print_metrics(metrics_list: list[FileMetrics]) -> tuple[list[str], list[str]
 def print_summary(metrics_list: list[FileMetrics], warnings: list[str], errors: list[str]) -> None:
     """Print summary and issues."""
     total_tokens = sum(m.tokens_estimated for m in metrics_list)
+    tracked_tokens = sum(m.tokens_estimated for m in metrics_list if m.budget)
     total_budget = sum(m.budget for m in metrics_list if m.budget)
     compliant_count = sum(1 for m in metrics_list if m.status == "compliant")
 
@@ -150,10 +151,10 @@ def print_summary(metrics_list: list[FileMetrics], warnings: list[str], errors: 
     print("=" * 70)
     print(f"Total files audited: {len(metrics_list)}")
     print(f"Compliant: {compliant_count}/{len(metrics_list)}")
-    print(f"Total tokens (estimated): {total_tokens:,}")
-    print(f"Total budget: {total_budget:,}")
+    print(f"Total tokens (estimated, all files): {total_tokens:,}")
+    print(f"Total budget (budgeted files only): {total_budget:,}")
     if total_budget:
-        print(f"Overall utilization: {(total_tokens / total_budget) * 100:.0f}%")
+        print(f"Overall utilization: {(tracked_tokens / total_budget) * 100:.0f}%")
     if warnings:
         print(f"\n⚠  Warnings ({len(warnings)}):")
         for w in warnings:
@@ -167,6 +168,7 @@ def print_summary(metrics_list: list[FileMetrics], warnings: list[str], errors: 
 def export_report(root_path: Path, metrics_list: list[FileMetrics], warnings: list[str], errors: list[str]) -> None:
     """Export audit results to JSON."""
     total_tokens = sum(m.tokens_estimated for m in metrics_list)
+    tracked_tokens = sum(m.tokens_estimated for m in metrics_list if m.budget)
     total_budget = sum(m.budget for m in metrics_list if m.budget)
     compliant_count = sum(1 for m in metrics_list if m.status == "compliant")
 
@@ -182,9 +184,12 @@ def export_report(root_path: Path, metrics_list: list[FileMetrics], warnings: li
             "compliant": compliant_count,
             "warnings": len(warnings),
             "over_budget": len(errors),
+            # total_tokens covers every audited file (incl. budget-less ones, e.g.
+            # skill SKILL.md files); utilization_percent is computed only over
+            # files that actually have a budget, so the two stay apples-to-apples.
             "total_tokens": total_tokens,
             "total_budget": total_budget,
-            "utilization_percent": round((total_tokens / total_budget) * 100, 1) if total_budget else 0,
+            "utilization_percent": round((tracked_tokens / total_budget) * 100, 1) if total_budget else 0,
         },
         "warnings": warnings,
         "errors": errors,

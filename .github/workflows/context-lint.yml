@@ -121,7 +121,8 @@ jobs:
             comment += '|------|--------|--------|--------|\n';
             audit.files.forEach(f => {
               const status = f.status === 'compliant' ? '✓' :
-                           f.status === 'warning' ? '⚠' : '❌';
+                           f.status === 'warning' ? '⚠' :
+                           f.status === 'info' ? 'ℹ️ (no budget)' : '❌';
               const budgetStr = f.budget ? `${f.budget}` : '—';
               comment += `| \`${f.path}\` | ${f.tokens_estimated} | ${budgetStr} | ${status} |\n`;
             });
