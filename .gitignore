@@ -24,3 +24,6 @@ gh-issue*.*
 issue*.json
 
 chore-idea.md
+
+# Local context-audit run output (CI writes/discards its own copy)
+audit-output.txt
