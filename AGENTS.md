@@ -1,88 +1,67 @@
 # Agent Operating Guide
 
-Instructions for AI agents (Claude Code or otherwise) working in this
-repository. See also [CLAUDE.md](CLAUDE.md) for the canonical Claude Code
-project instructions — this file restates the same rules in
-tool-agnostic form. GitHub Copilot reads
-[.github/copilot-instructions.md](.github/copilot-instructions.md) instead,
-which is a manually-kept-in-sync trim of this file.
+Instructions for AI agents (Claude Code or otherwise) in this repo. See
+[CLAUDE.md](CLAUDE.md) for the canonical Claude Code instructions — this
+file restates them tool-agnostically. Copilot reads
+[.github/copilot-instructions.md](.github/copilot-instructions.md), a
+manually-synced trim of this file.
 
-Tool permissions and safety hooks live in
-[.claude/settings.json](.claude/settings.json) (committed baseline) and
-`.claude/settings.local.json` (personal overrides, gitignored) — see that
-file for the exact allow/ask rules and the `PreToolUse` hook that blocks
-destructive Bash commands.
+Tool permissions and safety hooks: [.claude/settings.json](.claude/settings.json)
+(committed) + `.claude/settings.local.json` (personal, gitignored) — includes
+the `PreToolUse` hook blocking destructive Bash commands.
 
 ## Project layout
 
-- `blender-mcp/` — the local FastMCP server that exposes Blender to agents.
-  Treat it as infrastructure: change it only when the tool interface itself
-  needs to change, not to work around a one-off script issue.
-  - `blender-mcp/addon/mcp_bridge_addon.py` — Blender addon that opens a
-    local TCP bridge inside an already-running, interactive Blender GUI
-    session, backing the `run_blender_python_live` tool.
-- `blender-project/scripts/` — generative Python automations. This is where
-  day-to-day modeling/rendering work happens.
-- `blender-project/renders/` — pipeline output (`.blend` files, preview
-  PNGs). Treat existing files here as build artifacts: regenerate via
-  scripts rather than hand-editing.
+- `blender-mcp/` — local FastMCP server exposing Blender to agents.
+  Infrastructure: change only when the tool interface itself must change.
+  - `addon/mcp_bridge_addon.py` — Blender addon opening a TCP bridge into a
+    live, interactive Blender GUI session, backing `run_blender_python_live`.
+- `blender-project/scripts/` — generative Python automations; day-to-day work.
+- `blender-project/renders/` — pipeline output (`.blend`, preview PNGs).
+  Build artifacts: regenerate via scripts, don't hand-edit.
 
 ## MCP tools
 
-`blender-local-agent` exposes three tools — pick deliberately, they are not
-interchangeable:
+`blender-local-agent` exposes three, not interchangeable:
 
-- `run_blender_python` — disposable, headless `blender --background`
-  process per call. Default choice for scene generation/rendering; never
-  touches a window the user has open.
-- `check_blender_live_status` — cheap probe for whether a live, addon-
-  enabled Blender GUI instance is reachable. Call this before
-  `run_blender_python_live` rather than eating its timeout blind.
-- `run_blender_python_live` — runs Python inside an already-open Blender
-  GUI session via the bridge addon. This **mutates the user's real open
-  scene**, unlike the background tool. Only use it when the task explicitly
-  needs to act on a live/open Blender window (e.g. the user is watching).
-  Requires the MCP Live Bridge addon enabled and Blender running
-  interactively — it depends on `bpy.app.timers`, which does not tick under
-  `--background`.
+- `run_blender_python` — disposable headless `blender --background` process
+  per call. Default; never touches a window the user has open.
+- `check_blender_live_status` — cheap probe for a reachable, addon-enabled
+  live instance. Call before `run_blender_python_live`, not blind.
+- `run_blender_python_live` — runs Python inside an **already-open** Blender
+  GUI session via the bridge addon. **Mutates the user's real open scene**.
+  Only when the task explicitly needs a live window. Requires the addon
+  enabled and Blender running interactively — depends on `bpy.app.timers`,
+  which doesn't tick under `--background`.
 
 ## Workflow
 
-1. Write or iterate a script in `blender-project/scripts/`. Every script
-   must `import bpy` to touch Blender data blocks.
-2. Execute it via the `blender-local-agent` MCP tool — `run_blender_python`
-   for the normal headless case, not by shelling out to `blender` directly.
-   The tool guarantees the right environment (Wayland display variables,
-   `bpy` import) is in place. Reach for `run_blender_python_live` only when
-   the task specifically requires touching an already-open Blender window.
-3. Verify output landed in `blender-project/renders/` before reporting a
-   task complete; a script that exits 0 without producing the expected
-   `.blend`/PNG has not actually finished the task.
+1. Write/iterate a script in `blender-project/scripts/`. Must `import bpy`.
+2. Execute via the MCP tool — `run_blender_python` normally, not by shelling
+   out to `blender` directly (the tool guarantees env + `bpy` import). Reach
+   for `run_blender_python_live` only when the task needs a live window.
+3. Verify output landed in `blender-project/renders/` before calling it
+   done — exit 0 doesn't mean the `.blend`/PNG exists.
 
 ## Environment notes
 
-- Target platform is KDE Wayland on Debian 13. If a script needs a visible
-  UI window rather than headless execution, it must pass through the
-  Wayland environment variables explicitly — don't assume an X11 display.
-- `run_blender_python` executes arbitrary Python with full `bpy` access and
-  inherits the host environment. See [SECURITY.md](SECURITY.md) before
-  running scripts from untrusted sources through it. The same applies to
-  `run_blender_python_live`, with higher stakes — it runs against a live
-  session instead of a disposable process, so an untrusted or buggy script
-  can corrupt scene state the user is actively working on.
+- KDE Wayland, Debian 13. A visible-UI script must pass Wayland env vars
+  explicitly — don't assume X11.
+- `run_blender_python` runs arbitrary Python with full `bpy` access and the
+  host environment — see [SECURITY.md](SECURITY.md) for untrusted sources.
+  `run_blender_python_live` carries the same risk against a live session
+  instead of a disposable one — a bad script there can corrupt scene state
+  the user is actively working on.
 
 ## Project skills
 
-Claude Code auto-discovers project skills under `.claude/skills/<name>/SKILL.md`
-(name + description frontmatter, invoked by name or by matching description).
-`.claude/skills/render-multi-angle/SKILL.md` documents the existing
-default/front/side/top render pattern from [SKILLS.md](SKILLS.md) — add new
-skills there as the script inventory grows rather than only updating the
-table in SKILLS.md.
+Claude Code auto-discovers `.claude/skills/<name>/SKILL.md` (name +
+description frontmatter). `.claude/skills/render-multi-angle/SKILL.md`
+documents the default/front/side/top render pattern from
+[SKILLS.md](SKILLS.md) — add new skills there as the inventory grows.
 
 ## Naming conventions
 
-Follow the existing pattern in `blender-project/scripts/` (see
-[DESIGN.md](DESIGN.md#script-conventions)):
+See [DESIGN.md](DESIGN.md#script-conventions):
 `model_<subject>.py`, `render_<subject>.py`, `render_<subject>_<angle>.py`,
-with a `_precise` suffix for higher-fidelity variants.
+`_precise` suffix for higher-fidelity variants.

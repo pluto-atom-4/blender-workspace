@@ -1,0 +1,154 @@
+name: Context Files Lint & Audit
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "CLAUDE.md"
+      - "DESIGN.md"
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"
+      - ".claude/**/*.md"
+      - "scripts/context-audit.py"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "CLAUDE.md"
+      - "DESIGN.md"
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"
+      - ".claude/**/*.md"
+      - "scripts/context-audit.py"
+
+jobs:
+  audit:
+    name: Audit Context Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run context audit
+        id: audit
+        run: |
+          python3 scripts/context-audit.py > audit-output.txt 2>&1
+          cat audit-output.txt
+
+      - name: Check file presence
+        id: presence
+        run: |
+          MISSING=()
+          REQUIRED_FILES=(
+            "CLAUDE.md"
+            "DESIGN.md"
+            "AGENTS.md"
+            ".github/copilot-instructions.md"
+          )
+
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              MISSING+=("$file")
+            fi
+          done
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "missing=true" >> $GITHUB_OUTPUT
+            echo "missing_files=$(IFS=, ; echo "${MISSING[*]}")" >> $GITHUB_OUTPUT
+            echo "❌ Missing required files: ${MISSING[*]}"
+            exit 1
+          else
+            echo "missing=false" >> $GITHUB_OUTPUT
+            echo "✓ All required context files present"
+          fi
+
+      - name: Parse audit JSON
+        id: parse
+        run: |
+          if [ -f "docs/dev-note/context-baseline.json" ]; then
+            OVER_BUDGET=$(jq '.summary.over_budget' docs/dev-note/context-baseline.json)
+            WARNINGS=$(jq '.summary.warnings' docs/dev-note/context-baseline.json)
+            UTILIZATION=$(jq '.summary.utilization_percent' docs/dev-note/context-baseline.json)
+
+            echo "over_budget=$OVER_BUDGET" >> $GITHUB_OUTPUT
+            echo "warnings=$WARNINGS" >> $GITHUB_OUTPUT
+            echo "utilization=$UTILIZATION" >> $GITHUB_OUTPUT
+
+            echo "📊 Context utilization: ${UTILIZATION}%"
+            echo "❌ Over budget: $OVER_BUDGET files"
+            echo "⚠  Warnings: $WARNINGS files"
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const audit = JSON.parse(fs.readFileSync('docs/dev-note/context-baseline.json', 'utf8'));
+
+            let comment = '## 📋 Context Files Audit\n\n';
+            comment += `**Utilization:** ${audit.summary.utilization_percent}% of recommended budget\n`;
+            comment += `**Files:** ${audit.summary.total_files} audited\n`;
+            comment += `**Status:** `;
+
+            if (audit.summary.over_budget > 0) {
+              comment += `❌ ${audit.summary.over_budget} file(s) over budget\n`;
+              comment += '\n### Over Budget\n';
+              audit.errors.forEach(err => {
+                comment += `- \`${err}\`\n`;
+              });
+            } else if (audit.summary.warnings > 0) {
+              comment += `⚠  ${audit.summary.warnings} warning(s)\n`;
+              comment += '\n### Warnings\n';
+              audit.warnings.forEach(warn => {
+                comment += `- ${warn}\n`;
+              });
+            } else {
+              comment += '✓ All compliant\n';
+            }
+
+            comment += '\n### File Summary\n| File | Tokens | Budget | Status |\n';
+            comment += '|------|--------|--------|--------|\n';
+            audit.files.forEach(f => {
+              const status = f.status === 'compliant' ? '✓' :
+                           f.status === 'warning' ? '⚠' : '❌';
+              const budgetStr = f.budget ? `${f.budget}` : '—';
+              comment += `| \`${f.path}\` | ${f.tokens_estimated} | ${budgetStr} | ${status} |\n`;
+            });
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Fail if over budget
+        if: steps.parse.outputs.over_budget != '0'
+        run: |
+          echo "❌ Context files exceed recommended budgets."
+          echo "See audit report: docs/dev-note/context-baseline.json"
+          exit 1
+
+      - name: Warn if high utilization
+        if: steps.parse.outputs.utilization > 95 && steps.parse.outputs.over_budget == '0'
+        run: |
+          echo "⚠  Context utilization approaching limit — consider refactoring"
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-audit-report
+          path: docs/dev-note/context-baseline.json
+          if-no-files-found: ignore
