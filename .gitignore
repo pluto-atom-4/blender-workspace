@@ -27,3 +27,7 @@ chore-idea.md
 
 # Local context-audit run output (CI writes/discards its own copy)
 audit-output.txt
+
+# Externally maintained skill, not vendored here -- install/update from
+# https://github.com/pluto-atom-4/pre-commit-enforce-skill
+.claude/skills/pre-commit-enforce/
