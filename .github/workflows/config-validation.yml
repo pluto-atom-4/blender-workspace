@@ -1,0 +1,110 @@
+name: Config Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.claude/settings.json'
+      - '.claude/settings.local.json'
+      - '.claude/hooks/**'
+      - '.github/copilot-instructions.md'
+      - '.github/instructions/**'
+      - '.claude/skills/*/SKILL.md'
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate .claude/settings.json (JSON schema)
+        run: |
+          echo "Validating .claude/settings.json..."
+          python3 -m json.tool .claude/settings.json > /dev/null
+          echo "✓ JSON valid"
+
+      - name: Validate .claude/settings.local.json
+        run: |
+          if [ -f .claude/settings.local.json ]; then
+            echo "Validating .claude/settings.local.json..."
+            python3 -m json.tool .claude/settings.local.json > /dev/null
+            echo "✓ JSON valid"
+          else
+            echo "✓ Not present (gitignored, personal override) — nothing to validate"
+          fi
+
+      - name: Validate PreToolUse hook wiring and guard patterns
+        run: |
+          echo "Checking PreToolUse hook wiring..."
+          grep -q '"PreToolUse"' .claude/settings.json && echo "✓ PreToolUse section found in settings.json"
+          grep -q 'block-destructive-bash.sh' .claude/settings.json && echo "✓ settings.json references the hook script"
+          bash -n .claude/hooks/block-destructive-bash.sh && echo "✓ Hook script is valid bash"
+          grep -q 'rm -rf' .claude/hooks/block-destructive-bash.sh && echo "✓ rm -rf guard present"
+          grep -q 'git push --force' .claude/hooks/block-destructive-bash.sh && echo "✓ git push --force guard present"
+          grep -q 'git reset --hard' .claude/hooks/block-destructive-bash.sh && echo "✓ git reset --hard guard present"
+
+      - name: Validate applyTo frontmatter in .github/instructions/*.instructions.md
+        run: |
+          echo "Checking Copilot path-specific instruction frontmatter..."
+          for f in .github/instructions/*.instructions.md; do
+            echo "Checking $f..."
+            head -1 "$f" | grep -q "^---$" && echo "  ✓ YAML start found"
+            grep -q "^applyTo:" "$f" && echo "  ✓ applyTo field present"
+          done
+
+      - name: Validate skill SKILL.md metadata
+        run: |
+          echo "Validating skill metadata..."
+          for skill_file in .claude/skills/*/SKILL.md; do
+            echo "Checking $skill_file..."
+            grep -q "^name:" "$skill_file" && echo "  ✓ name field"
+            grep -q "^description:" "$skill_file" && echo "  ✓ description field"
+          done
+
+      - name: Validate CLAUDE.md line count
+        run: |
+          lines=$(wc -l < CLAUDE.md)
+          echo "CLAUDE.md: $lines lines"
+          if [ "$lines" -gt 250 ]; then
+            echo "❌ CLAUDE.md exceeds 250 lines ($lines)"
+            exit 1
+          fi
+          echo "✓ Under 250 lines"
+
+      - name: Validate AGENTS.md project-skills section
+        run: |
+          echo "Checking AGENTS.md for the Project skills section..."
+          grep -q "## Project skills" AGENTS.md && echo "✓ Project skills section found"
+          grep -q ".claude/skills" AGENTS.md && echo "✓ .claude/skills/ discovery path documented"
+
+      - name: Validate cross-tool config sync
+        run: |
+          echo "Checking config consistency across tools..."
+          grep -q "rm -rf" .claude/hooks/block-destructive-bash.sh && grep -q "rm -rf" .github/copilot-instructions.md && echo "✓ Tool constraints sync (rm -rf)"
+          grep -q "git push --force" .claude/hooks/block-destructive-bash.sh && grep -q "git push --force" .github/copilot-instructions.md && echo "✓ Tool constraints sync (git push --force)"
+
+  lint-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check markdown formatting
+        run: |
+          echo "Validating markdown syntax..."
+          for md_file in CLAUDE.md AGENTS.md .github/copilot-instructions.md; do
+            echo "Checking $md_file..."
+            grep -E '^\[' "$md_file" | head -5 || echo "  ✓ Links ok"
+          done
+
+      - name: Check for broken references
+        run: |
+          echo "Checking cross-document references..."
+          if grep -q '@AGENTS.md' CLAUDE.md; then
+            if [ -f AGENTS.md ]; then
+              echo "✓ @AGENTS.md reference OK"
+            fi
+          fi

@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""
+Context Files Audit Script
+
+Scans the core .md context files in this repo and reports:
+- Line counts, token estimates, size vs budget compliance
+- Metrics exported to JSON
+
+Run: python3 scripts/context-audit.py
+
+Output: docs/dev-note/context-baseline.json
+"""
+
+import json
+import os
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+# Token estimation: ~4 chars per token (conservative)
+CHARS_PER_TOKEN = 4
+
+# Recommended budgets (in tokens), for the context files this repo actually has.
+BUDGETS = {
+    "CLAUDE.md": 1500,
+    "DESIGN.md": 3000,
+    "AGENTS.md": 1000,
+    ".github/copilot-instructions.md": 1000,
+}
+
+
+@dataclass
+class FileMetrics:
+    """Metrics for a single context file."""
+    path: str
+    lines: int
+    chars: int
+    tokens_estimated: int
+    budget: Optional[int]
+    status: str  # "compliant", "warning", "over_budget"
+    percent_of_budget: Optional[float]
+    last_modified: str
+
+    def to_dict(self):
+        return asdict(self)
+
+
+def get_token_estimate(text: str) -> int:
+    """Estimate tokens using char count / 4."""
+    return len(text) // CHARS_PER_TOKEN
+
+
+def audit_file(file_path: Path, root_path: Path) -> Optional[FileMetrics]:
+    """Audit a single .md file."""
+    if not file_path.exists():
+        return None
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        relative_path = str(file_path.relative_to(root_path))
+        lines = len(content.splitlines())
+        chars = len(content)
+        tokens = get_token_estimate(content)
+        budget = BUDGETS.get(relative_path)
+
+        # Determine status
+        if budget is None:
+            status = "info"
+            percent = None
+        elif tokens <= budget:
+            status = "compliant"
+            percent = (tokens / budget) * 100
+        elif tokens <= budget * 1.1:
+            status = "warning"
+            percent = (tokens / budget) * 100
+        else:
+            status = "over_budget"
+            percent = (tokens / budget) * 100
+
+        # Last modified time
+        mtime = os.path.getmtime(file_path)
+        last_modified = datetime.fromtimestamp(mtime).isoformat()
+
+        return FileMetrics(
+            path=relative_path,
+            lines=lines,
+            chars=chars,
+            tokens_estimated=tokens,
+            budget=budget,
+            status=status,
+            percent_of_budget=percent,
+            last_modified=last_modified,
+        )
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        return None
+
+
+def collect_files(root_path: Path) -> list[Path]:
+    """Collect the core context .md files, plus any project skills."""
+    core_files = [
+        root_path / "CLAUDE.md",
+        root_path / "DESIGN.md",
+        root_path / "AGENTS.md",
+        root_path / ".github" / "copilot-instructions.md",
+    ]
+    skills_dir = root_path / ".claude" / "skills"
+    if skills_dir.exists():
+        core_files.extend(sorted(skills_dir.glob("*/SKILL.md")))
+    return core_files
+
+
+def print_metrics(metrics_list: list[FileMetrics]) -> tuple[list[str], list[str]]:
+    """Print file metrics. Return warnings and errors."""
+    warnings = []
+    errors = []
+    for metrics in metrics_list:
+        status_icon = {
+            "compliant": "✓",
+            "warning": "⚠",
+            "over_budget": "✗",
+            "info": "ℹ",
+        }.get(metrics.status, "?")
+        print(
+            f"{status_icon} {metrics.path}\n"
+            f"   Lines: {metrics.lines} | Tokens: {metrics.tokens_estimated} | "
+            f"Budget: {metrics.budget or 'none'}"
+        )
+        if metrics.percent_of_budget:
+            print(f"   {metrics.percent_of_budget:.0f}% of budget")
+        if metrics.status == "warning":
+            warnings.append(f"{metrics.path}: {metrics.percent_of_budget:.0f}% of budget")
+        elif metrics.status == "over_budget":
+            errors.append(f"{metrics.path}: EXCEEDS budget ({metrics.percent_of_budget:.0f}%)")
+        print()
+    return warnings, errors
+
+
+def print_summary(metrics_list: list[FileMetrics], warnings: list[str], errors: list[str]) -> None:
+    """Print summary and issues."""
+    total_tokens = sum(m.tokens_estimated for m in metrics_list)
+    tracked_tokens = sum(m.tokens_estimated for m in metrics_list if m.budget)
+    total_budget = sum(m.budget for m in metrics_list if m.budget)
+    compliant_count = sum(1 for m in metrics_list if m.status == "compliant")
+
+    print("=" * 70)
+    print("SUMMARY")
+    print("=" * 70)
+    print(f"Total files audited: {len(metrics_list)}")
+    print(f"Compliant: {compliant_count}/{len(metrics_list)}")
+    print(f"Total tokens (estimated, all files): {total_tokens:,}")
+    print(f"Total budget (budgeted files only): {total_budget:,}")
+    if total_budget:
+        print(f"Overall utilization: {(tracked_tokens / total_budget) * 100:.0f}%")
+    if warnings:
+        print(f"\n⚠  Warnings ({len(warnings)}):")
+        for w in warnings:
+            print(f"   - {w}")
+    if errors:
+        print(f"\n✗ Over Budget ({len(errors)}):")
+        for e in errors:
+            print(f"   - {e}")
+
+
+def export_report(root_path: Path, metrics_list: list[FileMetrics], warnings: list[str], errors: list[str]) -> None:
+    """Export audit results to JSON."""
+    total_tokens = sum(m.tokens_estimated for m in metrics_list)
+    tracked_tokens = sum(m.tokens_estimated for m in metrics_list if m.budget)
+    total_budget = sum(m.budget for m in metrics_list if m.budget)
+    compliant_count = sum(1 for m in metrics_list if m.status == "compliant")
+
+    output_dir = root_path / "docs" / "dev-note"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / "context-baseline.json"
+
+    report = {
+        "timestamp": datetime.now().isoformat(),
+        "files": [m.to_dict() for m in metrics_list],
+        "summary": {
+            "total_files": len(metrics_list),
+            "compliant": compliant_count,
+            "warnings": len(warnings),
+            "over_budget": len(errors),
+            # total_tokens covers every audited file (incl. budget-less ones, e.g.
+            # skill SKILL.md files); utilization_percent is computed only over
+            # files that actually have a budget, so the two stay apples-to-apples.
+            "total_tokens": total_tokens,
+            "total_budget": total_budget,
+            "utilization_percent": round((tracked_tokens / total_budget) * 100, 1) if total_budget else 0,
+        },
+        "warnings": warnings,
+        "errors": errors,
+    }
+
+    with open(output_file, "w") as f:
+        json.dump(report, f, indent=2)
+
+    print(f"\n📊 Report exported to: {output_file}")
+
+
+def main():
+    root_path = Path(__file__).parent.parent
+    core_files = collect_files(root_path)
+
+    print("🔍 Auditing context files...\n")
+    metrics_list = []
+    for file_path in core_files:
+        metrics = audit_file(file_path, root_path)
+        if metrics:
+            metrics_list.append(metrics)
+
+    warnings, errors = print_metrics(metrics_list)
+    print_summary(metrics_list, warnings, errors)
+    export_report(root_path, metrics_list, warnings, errors)
+
+
+if __name__ == "__main__":
+    main()
