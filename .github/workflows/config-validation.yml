@@ -42,10 +42,36 @@ jobs:
           echo "Checking PreToolUse hook wiring..."
           grep -q '"PreToolUse"' .claude/settings.json && echo "✓ PreToolUse section found in settings.json"
           grep -q 'block-destructive-bash.sh' .claude/settings.json && echo "✓ settings.json references the hook script"
+          if grep -qU $'\r' .claude/hooks/block-destructive-bash.sh; then
+            echo "❌ CRLF line endings in hook script — shebang will fail to exec (see issue #19)"
+            exit 1
+          fi
+          echo "✓ No CRLF line endings"
           bash -n .claude/hooks/block-destructive-bash.sh && echo "✓ Hook script is valid bash"
           grep -q 'rm -rf' .claude/hooks/block-destructive-bash.sh && echo "✓ rm -rf guard present"
           grep -q 'git push --force' .claude/hooks/block-destructive-bash.sh && echo "✓ git push --force guard present"
           grep -q 'git reset --hard' .claude/hooks/block-destructive-bash.sh && echo "✓ git reset --hard guard present"
+
+          # bash -n above only checks syntax by invoking bash directly, bypassing
+          # the shebang entirely -- it would NOT have caught the CRLF bug. Actually
+          # exec the script via its own shebang, the way Claude Code's hook runner
+          # does, to prove it really runs.
+          echo "Executing hook via its own shebang (this is what catches the CRLF bug)..."
+          set +e
+          echo '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | .claude/hooks/block-destructive-bash.sh
+          rc_safe=$?
+          echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"}}' | .claude/hooks/block-destructive-bash.sh
+          rc_destructive=$?
+          set -e
+          if [ "$rc_safe" -ne 0 ]; then
+            echo "❌ Hook rejected a safe command (exit $rc_safe, expected 0)"
+            exit 1
+          fi
+          if [ "$rc_destructive" -ne 2 ]; then
+            echo "❌ Hook did not block rm -rf (exit $rc_destructive, expected 2 -- 127 means the script failed to exec at all, e.g. the CRLF bug)"
+            exit 1
+          fi
+          echo "✓ Hook executes via shebang and blocks/allows correctly"
 
       - name: Validate applyTo frontmatter in .github/instructions/*.instructions.md
         run: |
