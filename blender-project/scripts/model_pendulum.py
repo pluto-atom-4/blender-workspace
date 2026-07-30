@@ -270,8 +270,14 @@ def build_leg(side, x_sign):
     # another Blender parent that itself sits under a dynamic ancestor --
     # the joint itself is wired below via a HINGE rigid_body_constraint.
     set_parent_keep_transform(leg, root)
-    leg.lock_location = (True, True, True)
-    leg.lock_rotation = (False, True, True)  # free to swing about local X
+    # No lock_location/lock_rotation here: these ACTIVE rigid bodies must
+    # stay fully free for the physics solver -- a prior version locked
+    # location to "true" on all axes for hand-posing, which the solver
+    # apparently honors too (confirmed by a bare-cube A/B test: physics
+    # works fine on an unlocked object, froze solid on a locked one),
+    # silently freezing the whole hinge-connected chain. Hand-posing outside
+    # simulation now just means grabbing and rotating in the viewport with
+    # the sim paused -- the HINGE constraint already limits it to one axis.
 
     # XL330 wheel-actuator servo -- fixed to the leg link's bottom end.
     wheel_servo_center = (hip_pivot[0], 0.0, leg_bottom_z - XL330_H / 2.0)
@@ -292,8 +298,7 @@ def build_leg(side, x_sign):
     # Flat to root for the same reason as the leg link -- physics-driven,
     # connected to the leg via a HINGE constraint rather than Blender parenting.
     set_parent_keep_transform(wheel, root)
-    wheel.lock_location = (True, True, True)
-    wheel.lock_rotation = (False, True, True)  # free to spin about local X
+    # No lock_location/lock_rotation -- same reasoning as Leg_Link_* above.
 
     return hip_servo, leg, wheel_servo, wheel
 
@@ -419,7 +424,8 @@ print("Rigid bodies: Chassis (active box), Leg_Link_* (active box), Wheel_* (act
 print(f"Constraints: Hinge_Hip_* (+/-{HIP_SWING_LIMIT_DEG:.0f} deg swing), "
       f"Hinge_Wheel_* (motorized, target {WHEEL_MOTOR_TARGET_ANG_VEL:.1f} rad/s, "
       f"max impulse {WHEEL_MOTOR_MAX_IMPULSE:.3f})")
-print("Hinges also hand-posable: Leg_Link_* / Wheel_* rotation X unlocked in viewport")
+print("Leg_Link_* / Wheel_* left fully unlocked for the physics solver "
+      "(HINGE constraint restricts them to one axis, not lock_rotation)")
 print("=" * 70)
 
 if bpy.app.background:

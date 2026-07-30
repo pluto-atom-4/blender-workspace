@@ -48,8 +48,15 @@ stay ordinary parented children and just ride along.
 Hinge axis is world **X** everywhere (wheel axle direction), since nothing
 upstream in the build is rotated. `STS3032_Hip_*` and `Wheel_*` have their
 object origin shifted onto that axis (`set_origin_to_point`), and
-`Leg_Link_*` / `Wheel_*` have `lock_rotation` unlocked only on X so they can
-also be hand-posed directly in the viewport outside of simulation.
+`Leg_Link_*` / `Wheel_*` are left fully unlocked so they can also be
+hand-posed directly in the viewport outside of simulation.
+
+This is the hierarchy as built by `model_pendulum.py`. Running
+`control_pendulum_balance.py` afterward mutates it further: the `Hinge_*`
+constraint empties are deleted, rigid-body data is stripped from
+`Chassis_Base_Plate`/`Leg_Link_*`/`Wheel_*`, and a new `Balance_Pivot` empty
+is inserted between the root and `Chassis_Base_Plate`/`Leg_Link_*` -- see
+Stabilization controller below.
 
 ## Physics
 
@@ -73,27 +80,51 @@ Mass and impulse values are placeholders sized for a small robot, not
 pulled from a real BOM -- tune them against actual part weights before
 trusting the sim's dynamics quantitatively.
 
+**The `Hinge_Wheel_*` angular motor does not work.** Verified via isolated
+minimal repros in this Blender 4.3.2 environment (anchor + single wheel +
+motor, both box and convex-hull collision shapes, both `HINGE`'s own motor
+and a dedicated `MOTOR` constraint, `motor_ang_max_impulse` swept from 0.05
+to 1000) -- all produced exactly zero rotation across 30+ simulated frames,
+while plain gravity-driven translation on the same rig worked correctly. So
+this rigid-body/hinge/motor setup is left in place as a structurally correct
+rig (correct joint pivots, masses, hinge limits) that can still be
+hand-posed or used for a passive drop/settle test, but it is **not** what
+drives the balance demo -- see below.
+
 ## Stabilization controller
 
-`control_pendulum_balance.py` installs a `bpy.app.handlers.frame_change_pre`
-handler that reads `Chassis_Base_Plate.rotation_euler.x` (pitch, 0 =
-upright) each frame and drives both `Hinge_Wheel_*` motors' target velocity
-with a PID loop:
+`control_pendulum_balance.py` does not use the rigid-body motor above (it
+can't drive anything). Instead it:
 
-```
-u = Kp*theta + Ki*integral(theta) + Kd*d(theta)/dt
-```
+1. Strips the `rigid_body` / `rigid_body_constraint` data `model_pendulum.py`
+   added and deletes the now-inert `Hinge_*` constraint-empty objects.
+2. Adds a `Balance_Pivot` empty at wheel-axle height (`Z = WHEEL_RADIUS`) and
+   reparents `Chassis_Base_Plate` + both `Leg_Link_*` under it, so rotating
+   the pivot tips the whole upper body around the wheel axle like a real
+   two-wheel balancing robot, instead of spinning the chassis in place.
+3. Runs the PID balance law as a plain Python simulation loop (not a live
+   frame handler):
 
-Gains: `Kp=14.5 Ki=0.3 Kd=4.2`, integral clamped to +/-2.0, output clamped
-to +/-20 rad/s. On install it applies an 8 deg initial lean to the chassis
-and clears the rigid-body-world bake so playback starts from that disturbed
-pose. Re-running the script replaces its own handler instead of stacking a
-second one (matched on `__name__ == "pendulum_balance_controller"`).
+   ```
+   u = Kp*theta + Ki*integral(theta) + Kd*d(theta)/dt
+   ```
 
-`CONTROL_SIGN` (top of the script) flips the motor-drive direction. It is
-**not verified against a running simulation** -- if the robot drives away
-from vertical instead of catching itself when you hit Play, flip it and
-re-run.
+   Gains: `Kp=14.5 Ki=0.3 Kd=4.2`, integral clamped to +/-2.0, output
+   clamped to +/-18. Starts from an 8 deg initial lean.
+4. Bakes the result to keyframes (`LINEAR` interpolation): `Armed_Inverted_Pendulum`
+   Y-location (rolling), `Balance_Pivot` X-rotation (tip), `Wheel_Left`/`Wheel_Right`
+   X-rotation (spin) -- 150 frames at 24fps.
+
+Re-running the script re-strips/re-builds `Balance_Pivot` and re-bakes from
+scratch each time, so it's safe to run repeatedly (e.g. after changing gains).
+
+This trades away real physical wheel-ground force interaction for a working,
+visually-correct animation of the same control law -- there is no Bullet
+simulation involved once this script runs.
+
+`CONTROL_SIGN` (top of the script) flips the sign of the control law.
+Verified against the baked sim: default value converges the initial 8 deg
+lean to -0.35 deg by frame 150 (`RESULT: BALANCED`, printed by the script).
 
 ## Running the scripts
 
@@ -102,7 +133,7 @@ All scripts live in `blender-project/scripts/`.
 | Script | Tool | Purpose |
 |---|---|---|
 | `model_pendulum.py` | `run_blender_python_live` | Build/rebuild the full rig in the open Blender GUI. Clears prior mesh/empty objects, keeps camera/lights. |
-| `control_pendulum_balance.py` | `run_blender_python_live` | Attach the PID balance controller to an already-built live rig. Press Play in the viewport afterward. |
+| `control_pendulum_balance.py` | `run_blender_python_live` | Strip the rig's (non-functional) physics, add `Balance_Pivot`, run the PID sim, bake keyframes 1-150. Press Play in the viewport afterward. |
 | `render_pendulum.py` | `run_blender_python` (headless) | Rebuild the rig in a disposable process, save `renders/pendulum.blend`, render the default 3/4 view. Run this first. |
 | `render_pendulum_front.py` / `_side.py` / `_top.py` | `run_blender_python` (headless) | Load `renders/pendulum.blend` and render that angle. Run after `render_pendulum.py`. |
 
@@ -132,10 +163,14 @@ Typical render/deliverable pass (headless, doesn't touch the live session):
 
 ## Known limitations / next steps
 
-- `CONTROL_SIGN` is unverified; confirm against a live Play-through.
-- Hip joints (`Hinge_Hip_*`) are passive (angle-limited, unmotorized) -- no
-  leg-swing control loop yet, only the wheel-balance loop.
-- No differential (per-wheel) drive for turning -- both wheel motors always
-  receive the same target velocity.
-- Rigid body masses/friction/motor torque are placeholders, not sourced
-  from real part weights or a torque datasheet.
+- The balance demo is keyframed, not physically simulated -- no real
+  wheel-ground force interaction, no reaction to external pushes/collisions,
+  because `use_motor_ang` (Blender's rigid-body angular motor) does not
+  produce rotation in this Blender 4.3.2 environment. See Physics above for
+  the repro that confirmed this; revisit if a Blender/engine update fixes it.
+- Hip joints have no control loop -- only the wheel-balance/tip loop is
+  modeled (as `Balance_Pivot` rotation); leg swing is not separately driven.
+- No differential (per-wheel) drive for turning -- both wheels always get
+  the same keyframed spin.
+- Rigid body masses/friction and the PID gains are placeholders/tuned by eye,
+  not sourced from real part weights or a torque datasheet.

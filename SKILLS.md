@@ -30,7 +30,7 @@ Full writeup: [PENDULUM.md](PENDULUM.md).
 | Script | Purpose |
 |---|---|
 | `model_pendulum.py` | Builds the chassis stack, hip/leg/wheel-actuator rig, rigid bodies, hinge constraints, and motorized wheel hinges. Live-only save skip via `bpy.app.background`. |
-| `control_pendulum_balance.py` | Installs a `frame_change_pre` PID handler that balances the chassis by driving the wheel-hinge motors. |
+| `control_pendulum_balance.py` | Strips the (non-functional, see [PENDULUM.md](PENDULUM.md)) rigid-body motor setup, runs the PID balance law as a plain Python sim, and bakes the result to keyframes. |
 | `render_pendulum.py` | Rebuilds the rig headlessly, saves `pendulum.blend`, renders the default 3/4 preview. |
 | `render_pendulum_front.py` | Front-view render (loads `pendulum.blend`). |
 | `render_pendulum_side.py` | Side-view render (loads `pendulum.blend`). |
