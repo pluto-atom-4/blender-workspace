@@ -71,5 +71,7 @@ agent client (e.g. Claude Code):
 
 See [DESIGN.md](DESIGN.md) for architecture, [AGENTS.md](AGENTS.md) for
 agent operating rules, [SKILLS.md](SKILLS.md) for the automation scripts
-available today, [CONTRIBUTE.md](CONTRIBUTE.md) for contribution guidelines,
-and [SECURITY.md](SECURITY.md) for the security model.
+available today, [PENDULUM.md](PENDULUM.md) for the armed inverted pendulum
+robot build (model, physics, control, renders), [CONTRIBUTE.md](CONTRIBUTE.md)
+for contribution guidelines, and [SECURITY.md](SECURITY.md) for the security
+model.
