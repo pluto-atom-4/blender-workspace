@@ -414,7 +414,14 @@ HIP_LATERAL = 50.0  # wheel centers 2*HIP_LATERAL=100mm apart; WHEEL_R=40mm need
                      # >=80mm to just touch, so this leaves a 20mm clearance gap
 HIP_Z = 20.0       # height of the hip pivot above the base plate
 ANKLE_DROP = 10.0  # ankle block center below the lower plate's tail
-WHEEL_TILT_DEG = 10.0  # ankle-servo forward tilt, inline with the linkage path
+DEFAULT_HIP_ANGLE = 22.0  # resting-stance hip bend -- the reference hardware
+                           # stands with the leg visibly hinged (knee bent),
+                           # never fully straightened, even at rest
+WHEEL_STUB = 22.0  # axle standoff between the wheel-servo body and the wheel
+                    # disc -- without it the servo body (which extends
+                    # SERVO_H=36mm from its pivot) clips straight through the
+                    # wheel (WHEEL_R=40mm), since both are coincident with
+                    # the same axle/spline pivot by construction
 
 
 def build_leg(side, collection, base_plate, rear_ext):
@@ -438,14 +445,24 @@ def build_leg(side, collection, base_plate, rear_ext):
     # Two thin plates sandwiching the hip/knee pivots (a fork), offset apart
     # laterally by PLATE_GAP. Both rotate identically -- a rigid doubled bar,
     # not two independent links.
+    # Static baseline rotation is DEFAULT_HIP_ANGLE, not 0 -- the leg stands
+    # visibly hinged at rest (matching the reference hardware) rather than
+    # straightened. kf_leg_angle's later keyframes (starting frame 91) begin
+    # from this same value, so there's no snap when balancing motion starts;
+    # frames 1-90 (exploded assembly) show the hinged stance throughout since
+    # nothing keyframes rotation before frame 91.
+    default_rad = math.radians(DEFAULT_HIP_ANGLE)
+
     upper_plate_front = build_link_bar(f"{tag}_UpperPlateFront", collection, UPPER_LEN,
                                         width_mm=9.0, thick_mm=3.0)
     upper_plate_front.location = mm(hip_world[0], hip_world[1] + PLATE_GAP / 2, hip_world[2])
+    upper_plate_front.rotation_euler.x = default_rad
     upper_plate_front.parent = base_plate
 
     upper_plate_back = build_link_bar(f"{tag}_UpperPlateBack", collection, UPPER_LEN,
                                        width_mm=9.0, thick_mm=3.0)
     upper_plate_back.location = mm(hip_world[0], hip_world[1] - PLATE_GAP / 2, hip_world[2])
+    upper_plate_back.rotation_euler.x = default_rad
     upper_plate_back.parent = base_plate
 
     # Knee knuckle: shared convergence point for both upper plates, parented
@@ -453,6 +470,7 @@ def build_leg(side, collection, base_plate, rear_ext):
     # equal-and-opposite LOCAL rotation (see kf_leg_angle) to cancel it back
     # out -- the single-plate lower leg hangs from here.
     knee_knuckle = build_knuckle(f"{tag}_KneeKnuckle", collection, location_mm=(0.0, 0.0, -UPPER_LEN))
+    knee_knuckle.rotation_euler.x = -default_rad
     knee_knuckle.parent = upper_plate_front
 
     lower_plate = build_link_bar(f"{tag}_LowerPlate", collection, LOWER_LEN,
@@ -467,13 +485,24 @@ def build_leg(side, collection, base_plate, rear_ext):
     ankle_knuckle = build_knuckle(f"{tag}_AnkleKnuckle", collection, location_mm=(0.0, 0.0, 0.0))
     ankle_knuckle.parent = ankle_block
 
+    # No rotation on the wheel servo: it mounts flush against ankle_block
+    # (which is itself unrotated), so their mating faces stay parallel --
+    # a static tilt here previously put a visible kink between the two.
     wheel_servo = build_servo(f"{tag}_WheelServo", collection, sign)
     wheel_servo.location = (0.0, 0.0, mm(-ANKLE_DROP))
-    wheel_servo.rotation_euler = (0.0, math.radians(WHEEL_TILT_DEG), 0.0)
     wheel_servo.parent = ankle_block
 
+    # Wheel sits WHEEL_STUB further out along the axle than the spline
+    # pivot itself -- see WHEEL_STUB's definition for why (avoids the wheel
+    # disc clipping through the servo body). The body's build_servo()
+    # docstring establishes it extends toward local -sign*X from its own
+    # pivot, so "away from the body" is the +sign*X direction.
+    axle_stub = make_cylinder(f"{tag}_AxleStub", collection, 4.0, WHEEL_STUB, axis='X',
+                               location_mm=(sign * WHEEL_STUB / 2, 0.0, 0.0), material=MAT_METAL())
+    axle_stub.parent = wheel_servo
+
     wheel = build_wheel(f"{tag}_WheelHub", collection)
-    wheel.location = (0.0, 0.0, 0.0)
+    wheel.location = mm(sign * WHEEL_STUB, 0.0, 0.0)
     wheel.parent = wheel_servo
 
     return {
@@ -585,38 +614,41 @@ def build_balance_and_jump(base_plate, legs):
     for f, p in zip(osc_frames, osc_pitch):
         kf_rot_x(base_plate, f, p)
         kf_wheel_pitch(legs, f, p * 0.6)
-    kf_leg_angle(legs, 91, 0.0)
-    kf_leg_angle(legs, 140, 0.0)
+    kf_leg_angle(legs, 91, DEFAULT_HIP_ANGLE)
+    kf_leg_angle(legs, 140, DEFAULT_HIP_ANGLE)
 
     # 141-160: crouch -- 4-bar compresses tightly, chassis stays flat.
+    # All targets below are DEFAULT_HIP_ANGLE plus the same deltas this
+    # animation used when it was authored around a straight (0deg) rest
+    # pose, so the crouch/jump/landing motion keeps its original amplitude.
     kf_rot_x(base_plate, 141, 0.0)
-    kf_leg_angle(legs, 141, 0.0)
+    kf_leg_angle(legs, 141, DEFAULT_HIP_ANGLE)
     kf_rot_x(base_plate, 160, 0.0)
-    kf_leg_angle(legs, 160, -35.0, easing='EASE_IN')
+    kf_leg_angle(legs, 160, DEFAULT_HIP_ANGLE - 35.0, easing='EASE_IN')
     kf_loc(base_plate, 141, (0.0, 0.0, 0.0))
     kf_loc(base_plate, 160, (0.0, 0.0, -22.0), easing='EASE_IN')
 
     # 161-175: explosive jump -- linkages snap outward, model launches up.
-    kf_leg_angle(legs, 168, 15.0, easing='EASE_OUT')
+    kf_leg_angle(legs, 168, DEFAULT_HIP_ANGLE + 15.0, easing='EASE_OUT')
     kf_loc(base_plate, 168, (0.0, 0.0, 25.0), easing='EASE_OUT')
-    kf_leg_angle(legs, 175, -10.0)
+    kf_leg_angle(legs, 175, DEFAULT_HIP_ANGLE - 10.0)
     kf_loc(base_plate, 175, (0.0, 0.0, 80.0), easing='EASE_OUT')
 
     # 176-210: peak -> fall -> touchdown compress -> resume balance.
     kf_loc(base_plate, 190, (0.0, 0.0, 95.0), easing='EASE_OUT')  # apex
     kf_rot_x(base_plate, 190, -1.0)
-    kf_leg_angle(legs, 190, -20.0)
+    kf_leg_angle(legs, 190, DEFAULT_HIP_ANGLE - 20.0)
 
     kf_loc(base_plate, 200, (0.0, 0.0, 0.0), easing='EASE_IN')
     kf_rot_x(base_plate, 200, 0.0)
-    kf_leg_angle(legs, 200, 5.0, easing='EASE_IN')  # extend for landing
+    kf_leg_angle(legs, 200, DEFAULT_HIP_ANGLE + 5.0, easing='EASE_IN')  # extend for landing
 
     kf_loc(base_plate, 205, (0.0, 0.0, -18.0), easing='EASE_IN')  # impact absorb
-    kf_leg_angle(legs, 205, -30.0, easing='EASE_IN')
+    kf_leg_angle(legs, 205, DEFAULT_HIP_ANGLE - 30.0, easing='EASE_IN')
 
     kf_loc(base_plate, 210, (0.0, 0.0, 0.0))
     kf_rot_x(base_plate, 210, 0.0)
-    kf_leg_angle(legs, 210, 0.0)
+    kf_leg_angle(legs, 210, DEFAULT_HIP_ANGLE)
     kf_wheel_pitch(legs, 210, 0.0)
 
 
