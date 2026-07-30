@@ -414,9 +414,9 @@ HIP_LATERAL = 50.0  # wheel centers 2*HIP_LATERAL=100mm apart; WHEEL_R=40mm need
                      # >=80mm to just touch, so this leaves a 20mm clearance gap
 HIP_Z = 20.0       # height of the hip pivot above the base plate
 ANKLE_DROP = 10.0  # ankle block center below the lower plate's tail
-DEFAULT_HIP_ANGLE = 8.0  # resting-stance hip bend -- the reference hardware
-                          # stands with the leg visibly hinged (knee bent) at
-                          # a narrow angle, never fully straightened, at rest
+DEFAULT_HIP_ANGLE = 58.0  # resting-stance hip bend -- matches the leg's
+                           # fully-outward-snapped angle from frame 168 of
+                           # the jump animation, used as the new rest pose
 WHEEL_STUB = 22.0  # axle standoff between the wheel-servo body and the wheel
                     # disc -- without it the servo body (which extends
                     # SERVO_H=36mm from its pivot) clips straight through the
