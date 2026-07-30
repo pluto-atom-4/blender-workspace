@@ -239,7 +239,7 @@ DECK_W, DECK_L, DECK_T = 78.0, 52.0, 3.0
 STANDOFF_R, STANDOFF_H = 2.5, 18.0
 BATTERY_W, BATTERY_L, BATTERY_T = 45.0, 24.0, 10.0
 ATOM_W, ATOM_L, ATOM_H = 24.0, 24.0, 13.6
-REAR_EXT_W, REAR_EXT_T, REAR_EXT_H = 36.0, 3.0, 28.0
+REAR_EXT_W, REAR_EXT_T, REAR_EXT_H = 130.0, 3.0, 28.0
 
 
 def build_base_plate(collection):
@@ -313,11 +313,15 @@ def build_servo(name, collection):
     return body
 
 
-def build_servo_horn_bracket(collection, tag):
+def build_servo_horn_bracket(collection, tag, sign):
     """Small metal bracket connecting the hip servo's horn to the driven
-    link's pivot -- purely visual, rides rigidly with the servo body."""
+    link's pivot -- purely visual, rides rigidly with the servo body.
+    hip_servo itself is never mirrored (L and R share the same local
+    orientation, only their world X position differs), so this bracket's
+    local +X nub must be sign-flipped explicitly or it ends up sitting
+    outward on one leg and inward on the other."""
     bracket = make_box(f"{tag}_HornBracket", collection, (4.0, 14.0, 6.0),
-                        pivot_mm=(0.0, -SPLINE_OFFSET_Y, 0.0), location_mm=(SPLINE_H, 0.0, 0.0),
+                        pivot_mm=(0.0, -SPLINE_OFFSET_Y, 0.0), location_mm=(SPLINE_H * sign, 0.0, 0.0),
                         material=MAT_METAL())
     return bracket
 
@@ -393,7 +397,8 @@ WHEEL_W = 16.0
 
 LINK_LEN = 60.0
 LINK_SEP = 20.0
-HIP_LATERAL = BASE_W / 2 - 15.0
+HIP_LATERAL = 50.0  # wheel centers 2*HIP_LATERAL=100mm apart; WHEEL_R=40mm needs
+                     # >=80mm to just touch, so this leaves a 20mm clearance gap
 HIP_A_Z = 20.0     # height of the driven (upper) pivot above the base plate
 ANKLE_DROP = 10.0  # ankle block center below LinkA's tail (coupler offset)
 WHEEL_TILT_DEG = 10.0  # ankle-servo forward tilt, inline with the linkage path
@@ -412,7 +417,7 @@ def build_leg(side, collection, base_plate, rear_ext):
     hip_servo = build_servo(f"{tag}_HipServo", collection)
     hip_servo.location = mm(*hip_a_world)
     hip_servo.parent = base_plate
-    horn = build_servo_horn_bracket(collection, tag)
+    horn = build_servo_horn_bracket(collection, tag, sign)
     horn.parent = hip_servo
 
     hip_knuckle_a = build_knuckle(f"{tag}_HipKnuckleA", collection, location_mm=hip_a_world)
@@ -562,12 +567,12 @@ def build_balance_and_jump(base_plate, legs):
 
     # 161-175: explosive jump -- linkages snap outward, model launches up.
     kf_leg_angle(legs, 168, 15.0, easing='EASE_OUT')
-    kf_loc(base_plate, 168, (0.0, 0.0, 50.0), easing='EASE_OUT')
+    kf_loc(base_plate, 168, (0.0, 0.0, 25.0), easing='EASE_OUT')
     kf_leg_angle(legs, 175, -10.0)
-    kf_loc(base_plate, 175, (0.0, 0.0, 160.0), easing='EASE_OUT')
+    kf_loc(base_plate, 175, (0.0, 0.0, 80.0), easing='EASE_OUT')
 
     # 176-210: peak -> fall -> touchdown compress -> resume balance.
-    kf_loc(base_plate, 190, (0.0, 0.0, 190.0), easing='EASE_OUT')  # apex
+    kf_loc(base_plate, 190, (0.0, 0.0, 95.0), easing='EASE_OUT')  # apex
     kf_rot_x(base_plate, 190, -1.0)
     kf_leg_angle(legs, 190, -20.0)
 
