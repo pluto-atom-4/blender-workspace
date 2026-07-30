@@ -300,15 +300,24 @@ SPLINE_H = 4.5
 SPLINE_OFFSET_Y = 12.0
 
 
-def build_servo(name, collection):
+def build_servo(name, collection, sign=1.0):
     """Built in its mounted orientation: output-spline axis (= joint hinge
     axis) is local X, object origin at the spline's rotation center. Caller
     animates rotation_euler.x directly as the joint angle -- no post-hoc
-    object rotation is ever applied, so parented children can't desync."""
-    pivot = (SERVO_H / 2, SPLINE_OFFSET_Y, 0.0)
+    object rotation is ever applied, so parented children can't desync.
+
+    The body's bulk sits on ONE side of its own origin (SERVO_H long, origin
+    at the output face), so which world direction it extends in depends on
+    pivot.x's sign. A fixed pivot.x (independent of `sign`) would make the
+    body extend toward the same world direction on both legs -- inward
+    (tucked toward the centerline, matching the reference hardware) on
+    whichever leg that direction happens to point in, and outward -- sticking
+    out past its own pivot, away from the robot -- on the other. Flipping
+    pivot.x by `sign` makes both legs' servo bodies tuck inward instead."""
+    pivot = (sign * SERVO_H / 2, SPLINE_OFFSET_Y, 0.0)
     body = make_box(name + "_Body", collection, (SERVO_H, SERVO_L, SERVO_W), pivot_mm=pivot, material=MAT_BLACK())
     spline = make_cylinder(name + "_Spline", collection, SPLINE_R, SPLINE_H, axis='X',
-                            location_mm=(SPLINE_H / 2, 0.0, 0.0), material=MAT_METAL())
+                            location_mm=(SPLINE_H / 2 * sign, 0.0, 0.0), material=MAT_METAL())
     spline.parent = body
     return body
 
@@ -414,7 +423,7 @@ def build_leg(side, collection, base_plate, rear_ext):
     # Hip servo: mounted horizontally under the rear deck, its output spline
     # coincides with the upper (driven) pivot axis -- the servo horn bracket
     # is the visual link from servo body to LinkA's pivot.
-    hip_servo = build_servo(f"{tag}_HipServo", collection)
+    hip_servo = build_servo(f"{tag}_HipServo", collection, sign)
     hip_servo.location = mm(*hip_a_world)
     hip_servo.parent = base_plate
     horn = build_servo_horn_bracket(collection, tag, sign)
@@ -441,7 +450,7 @@ def build_leg(side, collection, base_plate, rear_ext):
                                    location_mm=(0.0, 0.0, -LINK_SEP))
     ankle_knuckle.parent = ankle_block
 
-    wheel_servo = build_servo(f"{tag}_WheelServo", collection)
+    wheel_servo = build_servo(f"{tag}_WheelServo", collection, sign)
     wheel_servo.location = (0.0, 0.0, mm(-ANKLE_DROP))
     wheel_servo.rotation_euler = (0.0, math.radians(WHEEL_TILT_DEG), 0.0)
     wheel_servo.parent = ankle_block
