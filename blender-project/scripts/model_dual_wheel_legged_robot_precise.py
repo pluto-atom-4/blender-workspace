@@ -414,9 +414,9 @@ HIP_LATERAL = 50.0  # wheel centers 2*HIP_LATERAL=100mm apart; WHEEL_R=40mm need
                      # >=80mm to just touch, so this leaves a 20mm clearance gap
 HIP_Z = 20.0       # height of the hip pivot above the base plate
 ANKLE_DROP = 10.0  # ankle block center below the lower plate's tail
-DEFAULT_HIP_ANGLE = 22.0  # resting-stance hip bend -- the reference hardware
-                           # stands with the leg visibly hinged (knee bent),
-                           # never fully straightened, even at rest
+DEFAULT_HIP_ANGLE = 8.0  # resting-stance hip bend -- the reference hardware
+                          # stands with the leg visibly hinged (knee bent) at
+                          # a narrow angle, never fully straightened, at rest
 WHEEL_STUB = 22.0  # axle standoff between the wheel-servo body and the wheel
                     # disc -- without it the servo body (which extends
                     # SERVO_H=36mm from its pivot) clips straight through the
@@ -628,10 +628,13 @@ def build_balance_and_jump(base_plate, legs):
     kf_loc(base_plate, 141, (0.0, 0.0, 0.0))
     kf_loc(base_plate, 160, (0.0, 0.0, -22.0), easing='EASE_IN')
 
-    # 161-175: explosive jump -- linkages snap outward, model launches up.
-    kf_leg_angle(legs, 168, DEFAULT_HIP_ANGLE + 15.0, easing='EASE_OUT')
+    # 161-175: explosive jump -- linkages snap outward (rapid extension past
+    # the narrow default) then backward (swinging past neutral the other
+    # way) in one continuous rapid motion, driving the model up the
+    # parabolic Z path below.
+    kf_leg_angle(legs, 168, DEFAULT_HIP_ANGLE + 50.0, easing='EASE_OUT')  # snap outward
     kf_loc(base_plate, 168, (0.0, 0.0, 25.0), easing='EASE_OUT')
-    kf_leg_angle(legs, 175, DEFAULT_HIP_ANGLE - 10.0)
+    kf_leg_angle(legs, 175, DEFAULT_HIP_ANGLE - 40.0, easing='EASE_OUT')  # snap backward
     kf_loc(base_plate, 175, (0.0, 0.0, 80.0), easing='EASE_OUT')
 
     # 176-210: peak -> fall -> touchdown compress -> resume balance.
