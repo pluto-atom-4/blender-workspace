@@ -383,33 +383,37 @@ WHEEL_W = 16.0
 
 
 # ---------------------------------------------------------------------------
-# 5. Assembly: sandwich stack + parallelogram 4-bar leg FK chain
+# 5. Assembly: sandwich stack + forked-plate leg FK chain
 #
 #    Chassis stack: BasePlate -> Standoffs / RearExtension / (Deck -> Atom S3)
-#    Leg (per side): RearExtension -> LinkA (driven, hip-servo) -> AnkleBlock
-#                                   -> WheelServo(inverted) -> WheelHub
-#                     RearExtension -> LinkB (parallel follower, same length)
+#    Leg (per side): RearExtension -> HipServo -> UpperPlateFront \
+#                                                  UpperPlateBack   > KneeKnuckle
+#                     KneeKnuckle -> LowerPlate -> AnkleBlock
+#                                 -> WheelServo(inverted) -> WheelHub
 #
-#    True parallelogram: LinkA and LinkB share the same length (LINK_LEN)
-#    and the same pivot separation (LINK_SEP) at both the chassis end (hip
-#    pivots A/B) and the coupler end (AnkleBlock's two attachment points).
-#    Both links are keyframed to IDENTICAL rotation_euler.x at every frame,
-#    which is what actually guarantees the parallelogram condition -- this
-#    is deterministic FK rather than a live constraint solve, following the
-#    same lesson as the base script: Blender's runtime constraint solving
-#    was unreliable for the leg IK there, so joint motion here is likewise
-#    authored directly as keyframed angles. AnkleBlock (the coupler) is then
-#    counter-rotated by -angle relative to LinkA so it never rotates in the
-#    world frame -- exactly the "constant relative angle" a parallelogram
-#    coupler exhibits.
+#    Matches the reference hardware's leg: two thin plates sandwich the hip
+#    and knee pivots (a fork, for a wider/stiffer bearing surface than one
+#    plate alone), converging at a single knuckle, then ONE plate continues
+#    from there down to the wheel. Only the hip is actuated; UpperPlateFront
+#    and UpperPlateBack are keyframed to the SAME rotation_euler.x (a rigid
+#    doubled pair, not independent links), and KneeKnuckle is keyframed to
+#    the NEGATIVE of that angle so the subtree below it (LowerPlate,
+#    AnkleBlock, wheel) never accumulates net rotation -- the wheel stays
+#    level through the full range of motion without a second actuator,
+#    exactly like the earlier parallelogram's coupler did. This is
+#    deterministic FK rather than a live constraint solve, per the same
+#    lesson as the base script: Blender's runtime bone-IK didn't re-solve
+#    under headless/live evaluation there, so joint motion is authored
+#    directly as keyframed angles throughout this project.
 # ---------------------------------------------------------------------------
 
-LINK_LEN = 60.0
-LINK_SEP = 20.0
+UPPER_LEN = 40.0
+LOWER_LEN = 30.0
+PLATE_GAP = 7.0  # lateral (Y) air gap between the two upper plates
 HIP_LATERAL = 50.0  # wheel centers 2*HIP_LATERAL=100mm apart; WHEEL_R=40mm needs
                      # >=80mm to just touch, so this leaves a 20mm clearance gap
-HIP_A_Z = 20.0     # height of the driven (upper) pivot above the base plate
-ANKLE_DROP = 10.0  # ankle block center below LinkA's tail (coupler offset)
+HIP_Z = 20.0       # height of the hip pivot above the base plate
+ANKLE_DROP = 10.0  # ankle block center below the lower plate's tail
 WHEEL_TILT_DEG = 10.0  # ankle-servo forward tilt, inline with the linkage path
 
 
@@ -417,37 +421,50 @@ def build_leg(side, collection, base_plate, rear_ext):
     sign = 1.0 if side == 'R' else -1.0
     tag = f"DWLRP_{side}"
 
-    hip_a_world = (sign * HIP_LATERAL, -BASE_L / 2 - REAR_EXT_T, HIP_A_Z)
-    hip_b_world = (hip_a_world[0], hip_a_world[1], HIP_A_Z - LINK_SEP)
+    hip_world = (sign * HIP_LATERAL, -BASE_L / 2 - REAR_EXT_T, HIP_Z)
 
     # Hip servo: mounted horizontally under the rear deck, its output spline
-    # coincides with the upper (driven) pivot axis -- the servo horn bracket
-    # is the visual link from servo body to LinkA's pivot.
+    # coincides with the hip pivot axis -- the servo horn bracket is the
+    # visual link from servo body to the upper plates' pivot.
     hip_servo = build_servo(f"{tag}_HipServo", collection, sign)
-    hip_servo.location = mm(*hip_a_world)
+    hip_servo.location = mm(*hip_world)
     hip_servo.parent = base_plate
     horn = build_servo_horn_bracket(collection, tag, sign)
     horn.parent = hip_servo
 
-    hip_knuckle_a = build_knuckle(f"{tag}_HipKnuckleA", collection, location_mm=hip_a_world)
-    hip_knuckle_a.parent = base_plate
-    hip_knuckle_b = build_knuckle(f"{tag}_HipKnuckleB", collection, location_mm=hip_b_world)
-    hip_knuckle_b.parent = base_plate
+    hip_knuckle = build_knuckle(f"{tag}_HipKnuckle", collection, location_mm=hip_world)
+    hip_knuckle.parent = base_plate
 
-    link_a = build_link_bar(f"{tag}_LinkA", collection, LINK_LEN)
-    link_a.location = mm(*hip_a_world)
-    link_a.parent = base_plate
+    # Two thin plates sandwiching the hip/knee pivots (a fork), offset apart
+    # laterally by PLATE_GAP. Both rotate identically -- a rigid doubled bar,
+    # not two independent links.
+    upper_plate_front = build_link_bar(f"{tag}_UpperPlateFront", collection, UPPER_LEN,
+                                        width_mm=9.0, thick_mm=3.0)
+    upper_plate_front.location = mm(hip_world[0], hip_world[1] + PLATE_GAP / 2, hip_world[2])
+    upper_plate_front.parent = base_plate
 
-    link_b = build_link_bar(f"{tag}_LinkB", collection, LINK_LEN)
-    link_b.location = mm(*hip_b_world)
-    link_b.parent = base_plate
+    upper_plate_back = build_link_bar(f"{tag}_UpperPlateBack", collection, UPPER_LEN,
+                                       width_mm=9.0, thick_mm=3.0)
+    upper_plate_back.location = mm(hip_world[0], hip_world[1] - PLATE_GAP / 2, hip_world[2])
+    upper_plate_back.parent = base_plate
+
+    # Knee knuckle: shared convergence point for both upper plates, parented
+    # to the front plate so it inherits that plate's rotation, then given an
+    # equal-and-opposite LOCAL rotation (see kf_leg_angle) to cancel it back
+    # out -- the single-plate lower leg hangs from here.
+    knee_knuckle = build_knuckle(f"{tag}_KneeKnuckle", collection, location_mm=(0.0, 0.0, -UPPER_LEN))
+    knee_knuckle.parent = upper_plate_front
+
+    lower_plate = build_link_bar(f"{tag}_LowerPlate", collection, LOWER_LEN,
+                                  width_mm=12.0, thick_mm=6.0)
+    lower_plate.location = (0.0, 0.0, 0.0)
+    lower_plate.parent = knee_knuckle
 
     ankle_block = build_ankle_block(f"{tag}_AnkleBlock", collection)
-    ankle_block.location = (0.0, 0.0, mm(-LINK_LEN))
-    ankle_block.parent = link_a
+    ankle_block.location = (0.0, 0.0, mm(-LOWER_LEN))
+    ankle_block.parent = lower_plate
 
-    ankle_knuckle = build_knuckle(f"{tag}_AnkleKnuckle", collection,
-                                   location_mm=(0.0, 0.0, -LINK_SEP))
+    ankle_knuckle = build_knuckle(f"{tag}_AnkleKnuckle", collection, location_mm=(0.0, 0.0, 0.0))
     ankle_knuckle.parent = ankle_block
 
     wheel_servo = build_servo(f"{tag}_WheelServo", collection, sign)
@@ -460,9 +477,11 @@ def build_leg(side, collection, base_plate, rear_ext):
     wheel.parent = wheel_servo
 
     return {
-        'hip_servo': hip_servo, 'horn': horn, 'link_a': link_a, 'link_b': link_b,
+        'hip_servo': hip_servo, 'horn': horn,
+        'upper_plate_front': upper_plate_front, 'upper_plate_back': upper_plate_back,
+        'knee_knuckle': knee_knuckle, 'lower_plate': lower_plate,
         'ankle_block': ankle_block, 'wheel_servo': wheel_servo, 'wheel': wheel,
-        'hip_a_world': hip_a_world, 'hip_b_world': hip_b_world,
+        'hip_world': hip_world,
     }
 
 
@@ -530,21 +549,24 @@ def build_exploded_view(base_plate, standoffs, deck, battery, atom, rear_ext, le
     for side, leg in legs.items():
         sign = 1.0 if side == 'R' else -1.0
         animate_assembly(leg['hip_servo'], mm_inv(leg['hip_servo'].location), (sign * 55.0, -15.0, 0.0), seat_frame=50)
-        animate_assembly(leg['link_a'], mm_inv(leg['link_a'].location), (sign * 45.0, 0.0, 10.0), seat_frame=60)
-        animate_assembly(leg['link_b'], mm_inv(leg['link_b'].location), (sign * 45.0, 0.0, -10.0), seat_frame=63)
+        animate_assembly(leg['upper_plate_front'], mm_inv(leg['upper_plate_front'].location), (sign * 45.0, 6.0, 10.0), seat_frame=58)
+        animate_assembly(leg['upper_plate_back'], mm_inv(leg['upper_plate_back'].location), (sign * 45.0, -6.0, 10.0), seat_frame=61)
+        animate_assembly(leg['lower_plate'], mm_inv(leg['lower_plate'].location), (sign * 30.0, 0.0, -15.0), seat_frame=68)
         animate_assembly(leg['ankle_block'], mm_inv(leg['ankle_block'].location), (sign * 20.0, 0.0, -20.0), seat_frame=72)
         animate_assembly(leg['wheel_servo'], mm_inv(leg['wheel_servo'].location), (0.0, 0.0, -15.0), seat_frame=78)
         animate_assembly(leg['wheel'], mm_inv(leg['wheel'].location), (sign * 35.0, 0.0, 0.0), seat_frame=85)
 
 
 def kf_leg_angle(legs, frame, angle_deg, easing='EASE_IN_OUT'):
-    """Drive both parallelogram links to the SAME angle (parallel condition)
-    and counter-rotate the ankle block (coupler) so it stays level -- this
-    is what makes the 4-bar behave as a true parallelogram linkage."""
+    """Drive the forked upper plates (rigid doubled pair) to the hip angle,
+    and counter-rotate the knee knuckle by the same amount so the lower
+    plate/ankle/wheel subtree it carries never accumulates net rotation --
+    the wheel stays level through the full range of motion with only the
+    hip actuated, same as the parallelogram coupler this replaced."""
     for leg in legs.values():
-        kf_rot_x(leg['link_a'], frame, angle_deg, easing=easing)
-        kf_rot_x(leg['link_b'], frame, angle_deg, easing=easing)
-        kf_rot_x(leg['ankle_block'], frame, -angle_deg, easing=easing)
+        kf_rot_x(leg['upper_plate_front'], frame, angle_deg, easing=easing)
+        kf_rot_x(leg['upper_plate_back'], frame, angle_deg, easing=easing)
+        kf_rot_x(leg['knee_knuckle'], frame, -angle_deg, easing=easing)
 
 
 def kf_wheel_pitch(legs, frame, deg, easing='EASE_IN_OUT'):
