@@ -29,7 +29,7 @@ if _SCRIPTS_DIR not in sys.path:
 from _model_common import (  # noqa: E402
     MM, mm, mm_inv, make_box, make_cylinder, merge_cutters,
     boolean_diff_apply, set_ease, animate_assembly, kf_loc, kf_loc_z, kf_rot_x,
-    lock_wheels_to_floor,
+    kf_rot_full, lock_wheels_to_floor,
 )
 
 # ---------------------------------------------------------------------------
@@ -452,9 +452,9 @@ def kf_leg_angle(legs, frame, angle_deg, easing='EASE_IN_OUT', interp='BEZIER'):
         kf_rot_x(leg['knee_knuckle'], frame, -angle_deg, easing=easing, interp=interp)
 
 
-def kf_wheel_pitch(legs, frame, deg, easing='EASE_IN_OUT'):
+def kf_wheel_pitch(legs, frame, deg, easing='EASE_IN_OUT', interp='BEZIER'):
     for leg in legs.values():
-        kf_rot_x(leg['wheel_servo'], frame, deg, easing=easing)
+        kf_rot_x(leg['wheel_servo'], frame, deg, easing=easing, interp=interp)
 
 
 def kf_wheel_spin(legs, frame, spin_deg, easing='EASE_IN_OUT', interp='BEZIER'):
@@ -482,15 +482,7 @@ def kf_wheel_spin(legs, frame, spin_deg, easing='EASE_IN_OUT', interp='BEZIER'):
     spin = Matrix.Rotation(math.radians(spin_deg), 4, 'Z')
     euler = (tip @ spin).to_euler('XYZ')
     for leg in legs.values():
-        wheel = leg['wheel']
-        wheel.rotation_euler = euler
-        wheel.keyframe_insert(data_path="rotation_euler", frame=frame)
-        if wheel.animation_data and wheel.animation_data.action:
-            for fc in wheel.animation_data.action.fcurves:
-                if fc.data_path == "rotation_euler":
-                    kp = fc.keyframe_points[-1]
-                    kp.interpolation = interp
-                    kp.easing = easing
+        kf_rot_full(leg['wheel'], frame, euler, interp=interp, easing=easing)
 
 
 def balance_oscillation(base_plate, legs, frames, pitches):
@@ -628,28 +620,34 @@ def build_balance_and_jump(base_plate, legs):
     kf_leg_angle(legs, 140, DEFAULT_HIP_ANGLE)
 
     # 140-CROUCH_END: crouch -- >=20% compression off the rest angle (using
-    # 34%: 58 -> 38), chassis stays flat and grounded. z=0.0 here is a
-    # placeholder -- lock_wheels_to_floor overwrites it (and every frame in
-    # between) with the FK-derived height needed to keep the wheel bottomed
-    # out on the floor instead of sinking through it.
-    # Every easing= below only does something if interp= is a real curve
-    # type: Blender ignores the `easing` enum entirely under BEZIER (the
-    # default used everywhere else in this file) -- confirmed empirically
-    # (issue #23 code review), so the "load" and "explode" phases pass
-    # interp='QUAD'/'EXPO' explicitly to actually get the intended shape
-    # instead of BEZIER's smooth-both-ends AUTO_CLAMPED curve regardless
-    # of what easing says. Also confirmed empirically: a keyframe's own
-    # interpolation/easing governs the segment LEAVING it (toward the next
-    # keyframe), not the segment arriving at it -- so the "load" shape has
-    # to be set on frame 141 (the segment 141->CROUCH_END), the "explode"
-    # shape on CROUCH_END (the segment CROUCH_END->LAUNCH_FRAME), etc.
+    # 34%: 58 -> 38), chassis stays flat and grounded.
+    #
+    # The "load"/"explode"/"ascent"/"descent" shapes below only work
+    # because of two things verified empirically (issue #23 code review,
+    # see set_keyframe_shape's docstring for the full explanation): (1)
+    # BEZIER interpolation ignores the `easing` enum entirely, so getting
+    # a real EASE_IN/EASE_OUT shape needs a real interp mode (QUAD/EXPO),
+    # and (2) a keyframe's shape governs the segment LEAVING it, not
+    # arriving -- so each phase's easing is set on the EARLIER keyframe of
+    # its segment (frame 141 for the load into CROUCH_END, CROUCH_END for
+    # the explode into LAUNCH_FRAME, etc).
+    #
+    # base_plate's location-Z easing/interp at frames 141/CROUCH_END/
+    # LAUNCH_FRAME is intentionally left at kf_loc's BEZIER default and
+    # NOT set here: all three fall inside lock_wheels_to_floor's locked
+    # range below, which re-keyframes Z at every single frame in that
+    # range regardless -- any shape set here would just get overwritten
+    # (issue #23 code review). LAUNCH_FRAME is the one exception (it's the
+    # LAST locked frame, so its shape controls the real, unlocked ascent
+    # after it) -- that one is set via lock_wheels_to_floor's
+    # boundary_shapes param below, not here, for the same reason.
     CROUCH_ANGLE = DEFAULT_HIP_ANGLE - 20.0  # 58 -> 38, a 34% reduction
     kf_rot_x(base_plate, 141, 0.0)
     # Load: starts slow, accelerates down into full compression over
     # 141->CROUCH_END -- reads as the spring winding up under building
     # force, not a lazy drift down.
     kf_leg_angle(legs, 141, DEFAULT_HIP_ANGLE, easing='EASE_IN', interp='QUAD')
-    kf_loc(base_plate, 141, (0.0, 0.0, 0.0), easing='EASE_IN', interp='QUAD')
+    kf_loc(base_plate, 141, (0.0, 0.0, 0.0))
     kf_rot_x(base_plate, CROUCH_END, 0.0)
     kf_wheel_spin(legs, CROUCH_END, 0.0)
 
@@ -657,19 +655,21 @@ def build_balance_and_jump(base_plate, legs):
     # the rest angle in a genuinely explosive EXPO/EASE_OUT snap (set on
     # CROUCH_END, which governs this outgoing segment -- near-all the
     # motion front-loaded into the first frame or two, tapering off, not
-    # BEZIER's symmetric bell curve). z=0.0 is a placeholder --
-    # lock_wheels_to_floor's range now extends through LAUNCH_FRAME, so the
-    # foot stays planted while the leg pushes the body up (load-and-explode
-    # spring), instead of the body sitting still while the foot floats free.
-    # Wheel-drive forward pulse fires over the same window (takeoff-physics
-    # brief point 2: lock down the horizontal balance plane during launch).
+    # BEZIER's symmetric bell curve). lock_wheels_to_floor's range now
+    # extends through LAUNCH_FRAME, so the foot stays planted while the leg
+    # pushes the body up (load-and-explode spring), instead of the body
+    # sitting still while the foot floats free. Wheel-drive forward pulse
+    # fires over the same window (takeoff-physics brief point 2: lock down
+    # the horizontal balance plane during launch).
     kf_leg_angle(legs, CROUCH_END, CROUCH_ANGLE, easing='EASE_OUT', interp='EXPO')
-    kf_loc(base_plate, CROUCH_END, (0.0, 0.0, 0.0), easing='EASE_OUT', interp='EXPO')
-    # LAUNCH_FRAME's own easing governs the NEXT segment (168->APEX_FRAME,
-    # the ascent) -- EASE_OUT/QUAD for a physically-plausible decelerating
-    # rise, set here rather than on APEX_FRAME.
+    kf_loc(base_plate, CROUCH_END, (0.0, 0.0, 0.0))
+    # LAUNCH_FRAME's rotation easing governs the leg's outgoing ascent
+    # shape directly (EASE_OUT/QUAD, a physically-plausible decelerating
+    # rise); its Z-location shape for the same segment is set via
+    # lock_wheels_to_floor's boundary_shapes below instead, since this
+    # kf_loc call's own shape would otherwise be overwritten there anyway.
     kf_leg_angle(legs, LAUNCH_FRAME, DEFAULT_HIP_ANGLE + 70.0, easing='EASE_OUT', interp='QUAD')
-    kf_loc(base_plate, LAUNCH_FRAME, (0.0, 0.0, 0.0), easing='EASE_OUT', interp='QUAD')
+    kf_loc(base_plate, LAUNCH_FRAME, (0.0, 0.0, 0.0))
     kf_wheel_spin(legs, LAUNCH_FRAME, 18.0)
 
     # Real launch height: wheel-bottom offset with the leg fully extended
@@ -736,7 +736,17 @@ def build_balance_and_jump(base_plate, legs):
     kf_leg_angle(legs, STAND_FRAME, DEFAULT_HIP_ANGLE)
     kf_wheel_pitch(legs, STAND_FRAME, 0.0)
 
-    lock_wheels_to_floor(base_plate, legs, floor_z, [(SETTLE_START, LAUNCH_FRAME), (LANDING_FRAME, STAND_FRAME)])
+    # boundary_shapes preserves the explosive-ascent shape on LAUNCH_FRAME:
+    # it's the last frame of the first locked range, so without this its Z
+    # keyframe's interp/easing would get silently reset to plain BEZIER by
+    # the dense correction loop, and the real (unlocked) ascent right after
+    # it would fall back to a symmetric bell curve instead of decelerating
+    # (issue #23 code review).
+    lock_wheels_to_floor(
+        base_plate, legs, floor_z,
+        [(SETTLE_START, LAUNCH_FRAME), (LANDING_FRAME, STAND_FRAME)],
+        boundary_shapes={LAUNCH_FRAME: ('QUAD', 'EASE_OUT')},
+    )
     return STAND_FRAME
 
 

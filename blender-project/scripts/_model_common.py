@@ -187,15 +187,53 @@ def animate_assembly(obj, assembled_loc_mm, explode_dir_mm, seat_frame=45, hold_
     set_ease(obj, 'EASE_OUT')
 
 
+def set_keyframe_shape(obj, data_path, frame, interp, easing, array_index=None):
+    """Sets interpolation/easing on the keyframe point at `frame` matching
+    data_path (and array_index, if given). Shared by every kf_* helper
+    below instead of each re-walking fcurves itself -- was independently
+    duplicated 4x before this (issue #23 code review).
+
+    Finds the keyframe by ITS FRAME NUMBER, not by grabbing
+    keyframe_points[-1] (array position) -- an earlier version of this
+    code did that, which only happens to find the keyframe just inserted
+    when every call across a curve's lifetime authors strictly in
+    increasing-frame order. lock_wheels_to_floor breaks that assumption on
+    purpose (it revisits early frames, like 90-168, AFTER later frames
+    like 174/220 are already keyframed), so keyframe_points[-1] there
+    silently grabbed the highest-FRAME-NUMBER keyframe on the curve --
+    usually the final stand-frame -- instead of the one just touched. That
+    bug was invisible as long as every caller used the same default shape
+    anyway; it only became visible once a caller needed a *specific* frame
+    to carry a different shape than its neighbors (issue #23 code review).
+
+    NOTE: a keyframe's interpolation/easing governs the curve segment
+    LEAVING that keyframe (toward the next one), not the segment arriving
+    at it -- verified empirically. Set the shape on the EARLIER of two
+    keyframes to control the segment between them.
+
+    NOTE: Blender ignores the `easing` enum entirely when interpolation is
+    'BEZIER' (the default here, and everywhere in this codebase) -- it
+    only affects the primitive curve types (QUAD/CUBIC/EXPO/SINE/etc).
+    Pass a real interp mode when `easing` needs to actually do something.
+    """
+    if not (obj.animation_data and obj.animation_data.action):
+        return
+    for fc in obj.animation_data.action.fcurves:
+        if fc.data_path != data_path:
+            continue
+        if array_index is not None and fc.array_index != array_index:
+            continue
+        for kp in fc.keyframe_points:
+            if abs(kp.co.x - frame) < 0.5:
+                kp.interpolation = interp
+                kp.easing = easing
+                break
+
+
 def kf_loc(obj, frame, loc_mm, interp='BEZIER', easing='EASE_IN_OUT'):
     obj.location = Vector(mm(*loc_mm))
     obj.keyframe_insert(data_path="location", frame=frame)
-    if obj.animation_data and obj.animation_data.action:
-        for fc in obj.animation_data.action.fcurves:
-            if fc.data_path == "location":
-                kp = fc.keyframe_points[-1]
-                kp.interpolation = interp
-                kp.easing = easing
+    set_keyframe_shape(obj, "location", frame, interp, easing)
 
 
 def kf_loc_z(obj, frame, z_mm, interp='BEZIER', easing='EASE_IN_OUT'):
@@ -206,26 +244,26 @@ def kf_loc_z(obj, frame, z_mm, interp='BEZIER', easing='EASE_IN_OUT'):
     never actually change."""
     obj.location.z = z_mm * MM
     obj.keyframe_insert(data_path="location", index=2, frame=frame)
-    if obj.animation_data and obj.animation_data.action:
-        for fc in obj.animation_data.action.fcurves:
-            if fc.data_path == "location" and fc.array_index == 2:
-                kp = fc.keyframe_points[-1]
-                kp.interpolation = interp
-                kp.easing = easing
+    set_keyframe_shape(obj, "location", frame, interp, easing, array_index=2)
 
 
 def kf_rot_x(obj, frame, deg, interp='BEZIER', easing='EASE_IN_OUT'):
     obj.rotation_euler.x = math.radians(deg)
     obj.keyframe_insert(data_path="rotation_euler", index=0, frame=frame)
-    if obj.animation_data and obj.animation_data.action:
-        for fc in obj.animation_data.action.fcurves:
-            if fc.data_path == "rotation_euler" and fc.array_index == 0:
-                kp = fc.keyframe_points[-1]
-                kp.interpolation = interp
-                kp.easing = easing
+    set_keyframe_shape(obj, "rotation_euler", frame, interp, easing, array_index=0)
 
 
-def lock_wheels_to_floor(root_obj, legs, floor_z, frame_ranges):
+def kf_rot_full(obj, frame, euler, interp='BEZIER', easing='EASE_IN_OUT'):
+    """Keyframes all three rotation_euler channels at once from a given
+    mathutils.Euler -- for rotations that don't decompose into a single
+    meaningful channel (e.g. a wheel roll composed around a tipped local
+    axis; see kf_wheel_spin in the _precise script)."""
+    obj.rotation_euler = euler
+    obj.keyframe_insert(data_path="rotation_euler", frame=frame)
+    set_keyframe_shape(obj, "rotation_euler", frame, interp, easing)
+
+
+def lock_wheels_to_floor(root_obj, legs, floor_z, frame_ranges, boundary_shapes=None):
     """Densely re-keyframes root_obj's Z (every frame, in the given ranges
     only) so the wheel bottom sits exactly at floor_z throughout -- not
     just at hand-authored anchor frames, which bezier-interpolate through
@@ -244,6 +282,19 @@ def lock_wheels_to_floor(root_obj, legs, floor_z, frame_ranges):
     per-leg balance correction) fails loudly here instead of silently
     floating/sinking L.
 
+    boundary_shapes: optional {frame: (interp, easing)} -- since a
+    keyframe's shape governs the segment LEAVING it (see set_keyframe_
+    shape), the LAST frame of a locked range still controls the very next
+    (unlocked, airborne) segment even though its VALUE gets corrected
+    here. Every frame's default BEZIER/EASE_IN_OUT shape is harmless for
+    frames strictly inside a range (the next frame's own point makes the
+    shape between them moot), but silently clobbering a deliberately-set
+    non-BEZIER shape on a range's last frame breaks whatever curve the
+    caller wanted for the segment after it (issue #23 code review: this
+    is exactly how the "explosive ascent" shape at LAUNCH_FRAME was lost).
+    Pass the desired shape for such frames here instead of relying on
+    whatever kf_loc/kf_rot_* call set it earlier.
+
     One-shot bake computed from the pose at script-build time -- if a live
     session (run_blender_python_live) re-keyframes a leg angle inside these
     ranges afterward, this correction does NOT get re-run and the bake goes
@@ -253,6 +304,7 @@ def lock_wheels_to_floor(root_obj, legs, floor_z, frame_ranges):
     scene = bpy.context.scene
     wheel_r = legs['R']['wheel']
     wheel_l = legs['L']['wheel']
+    boundary_shapes = boundary_shapes or {}
     for start, end in frame_ranges:
         for f in range(start, end + 1):
             scene.frame_set(f)
@@ -266,4 +318,5 @@ def lock_wheels_to_floor(root_obj, legs, floor_z, frame_ranges):
                 "assumes symmetric legs and only corrects against R"
             )
             needed_z_mm = (floor_z - offset_r) / MM
-            kf_loc_z(root_obj, f, needed_z_mm, easing='EASE_IN_OUT')
+            interp, easing = boundary_shapes.get(f, ('BEZIER', 'EASE_IN_OUT'))
+            kf_loc_z(root_obj, f, needed_z_mm, interp=interp, easing=easing)
