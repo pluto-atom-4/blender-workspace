@@ -223,3 +223,47 @@ def kf_rot_x(obj, frame, deg, interp='BEZIER', easing='EASE_IN_OUT'):
                 kp = fc.keyframe_points[-1]
                 kp.interpolation = interp
                 kp.easing = easing
+
+
+def lock_wheels_to_floor(root_obj, legs, floor_z, frame_ranges):
+    """Densely re-keyframes root_obj's Z (every frame, in the given ranges
+    only) so the wheel bottom sits exactly at floor_z throughout -- not
+    just at hand-authored anchor frames, which bezier-interpolate through
+    a nonlinear FK relationship and drift a few mm off the floor between
+    them (issue #23: measured up to -4.9mm mid-crouch-ramp before this).
+
+    Shared by both robot scripts (root_obj is base_plate/chassis
+    respectively) -- moved here after the same "extend the range one
+    frame into launch" fix had to be independently re-derived for each
+    copy once already.
+
+    Derived from the R wheel and applied to both via root_obj.z (shared by
+    the whole rig) -- correct as long as the caller always drives L and R
+    to identical angles, which both callers do. Asserted every sampled
+    frame rather than assumed, so a future asymmetric gait change (turning,
+    per-leg balance correction) fails loudly here instead of silently
+    floating/sinking L.
+
+    One-shot bake computed from the pose at script-build time -- if a live
+    session (run_blender_python_live) re-keyframes a leg angle inside these
+    ranges afterward, this correction does NOT get re-run and the bake goes
+    stale for that frame. Re-run the whole model script (or call this
+    function again) after any such live edit.
+    """
+    scene = bpy.context.scene
+    wheel_r = legs['R']['wheel']
+    wheel_l = legs['L']['wheel']
+    for start, end in frame_ranges:
+        for f in range(start, end + 1):
+            scene.frame_set(f)
+            root_obj.location.z = 0.0
+            bpy.context.view_layer.update()
+            offset_r = min((wheel_r.matrix_world @ Vector(c)).z for c in wheel_r.bound_box)
+            offset_l = min((wheel_l.matrix_world @ Vector(c)).z for c in wheel_l.bound_box)
+            assert abs(offset_l - offset_r) < 0.001, (
+                f"frame {f}: L/R wheel-bottom offsets diverged "
+                f"({offset_l:.5f} vs {offset_r:.5f}) -- lock_wheels_to_floor "
+                "assumes symmetric legs and only corrects against R"
+            )
+            needed_z_mm = (floor_z - offset_r) / MM
+            kf_loc_z(root_obj, f, needed_z_mm, easing='EASE_IN_OUT')

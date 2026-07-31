@@ -27,8 +27,9 @@ _SCRIPTS_DIR = "/home/pluto-atom-4/blender-workspace/blender-project/scripts"
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 from _model_common import (  # noqa: E402
-    MM, mm, mm_inv, AXIS_ROT, make_box, make_cylinder, merge_cutters,
+    MM, mm, mm_inv, make_box, make_cylinder, merge_cutters,
     boolean_diff_apply, set_ease, animate_assembly, kf_loc, kf_loc_z, kf_rot_x,
+    lock_wheels_to_floor,
 )
 
 # ---------------------------------------------------------------------------
@@ -506,12 +507,20 @@ def build_balance_and_jump(base_plate, legs):
     model's feet are on the floor (base_plate.z == 0) at both ends of the
     clip, only leaving the ground for the single jump arc in the middle.
 
-    The airborne arc's ascent/descent frame counts are derived from
-    JUMP_APEX_MM under constant gravity (t_up = sqrt(2*h/g)) rather than
-    hand-picked, and kept symmetric -- a real projectile takes equally
-    long to rise and fall to/from a given apex; an earlier version used an
-    18-frame ascent vs a 24-25 frame descent for the same height, which
-    reads as floaty slow-motion rather than an explosive leap (issue #23
+    The airborne arc's ascent/descent frame counts are derived from real
+    projectile motion under constant gravity (t = sqrt(2*h/g)) rather than
+    hand-picked -- but ascent and descent are NOT forced symmetric, because
+    they are not the same height: the leg stays planted through the whole
+    162-LAUNCH_FRAME snap (lock_wheels_to_floor now covers that window
+    too), so the foot pushes the body up to launch_z -- a fully-extended-
+    leg height, well above 0 -- before actually leaving the ground.
+    Ascent only has to cover (JUMP_APEX_MM - launch_z); descent free-falls
+    the full JUMP_APEX_MM back down to true floor level, since the landing
+    pose (DEFAULT_HIP_ANGLE, a shorter reach than the 128deg launch pose)
+    touches down at base_plate.z=0. An earlier version measured ascent
+    from an assumed z=0 launch point while the leg was actually already
+    partway extended at LAUNCH_FRAME (base_plate.z=30mm, hand-picked, not
+    derived) -- silently ~30mm short of the real launch height (issue #23
     code review). Phase frames below are computed at each build, so
     retuning JUMP_APEX_MM keeps the whole timeline physically consistent
     instead of needing every downstream frame number hand-updated too:
@@ -524,17 +533,22 @@ def build_balance_and_jump(base_plate, legs):
                held at the rest angle (58deg).
       140-162  Crouch: hip angle compresses >=20% off 58deg (58->38, a 34%
                reduction) as anticipation, chassis stays flat/level.
-      162-LAUNCH_FRAME  Explosive Jump: legs stretch outward past the rest
-               angle (58+70=128deg) in a fast EASE_OUT snap. A forward
-               wheel-spin pulse (kf_wheel_spin) fires over the same window
-               -- "pulse the wheel drive motors forward slightly to lock
-               down the horizontal balance plane" per the takeoff-physics
-               brief -- then the model leaves the floor at LAUNCH_FRAME.
+      162-LAUNCH_FRAME  Explosive Jump (load-and-explode spring): legs
+               stretch outward past the rest angle (58+70=128deg) in a
+               fast EASE_OUT snap while the foot stays locked to the floor
+               (lock_wheels_to_floor covers this window) -- the leg pushes
+               the body up from the planted foot, same as a real spring
+               extending against the ground, rather than the foot floating
+               free while the body stays put. A forward wheel-spin pulse
+               (kf_wheel_spin) fires over the same window -- "pulse the
+               wheel drive motors forward slightly to lock down the
+               horizontal balance plane" per the takeoff-physics brief.
       LAUNCH_FRAME-APEX_FRAME  Ascent: legs relax back to exactly
-               DEFAULT_HIP_ANGLE (58) -- the only pose used while airborne
-               -- while rising to JUMP_APEX_MM.
-      APEX_FRAME-LANDING_FRAME  Descent: symmetric free-fall back to the
-               floor (same frame count as the ascent).
+               DEFAULT_HIP_ANGLE (58) while rising the remaining
+               (JUMP_APEX_MM - launch_z) to JUMP_APEX_MM under gravity.
+      APEX_FRAME-LANDING_FRAME  Descent: free-fall the full JUMP_APEX_MM
+               back down to floor level (base_plate.z=0), where the
+               shorter landing pose touches down.
       LANDING_FRAME  Landing: touchdown compression absorbs the impact,
                wheel-spin pulse relaxes back to zero.
       LANDING_FRAME-STAND_FRAME-10  Balancing: same +/-1.5deg pitch
@@ -547,10 +561,6 @@ def build_balance_and_jump(base_plate, legs):
     trusting hand-picked anchor values to interpolate correctly in between.
     """
     fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
-    ascent_time_s = math.sqrt(2.0 * (JUMP_APEX_MM * MM) / GRAVITY)
-    ascent_frames = round(ascent_time_s * fps)
-    APEX_FRAME = LAUNCH_FRAME + ascent_frames
-    LANDING_FRAME = APEX_FRAME + ascent_frames  # symmetric descent
 
     # Boundary frames for the two grounded ranges lock_wheels_to_floor
     # corrects -- named once here and reused at every call site below (and
@@ -558,7 +568,6 @@ def build_balance_and_jump(base_plate, legs):
     # silently desync the correction range from the anchors it covers.
     SETTLE_START = 90
     CROUCH_END = 162
-    STAND_FRAME = LANDING_FRAME + 40  # matches the original 205->245 spacing
 
     scene = bpy.context.scene
     # Reference "floor" height: wheel-bottom world Z at the rig's static
@@ -576,7 +585,7 @@ def build_balance_and_jump(base_plate, legs):
     # recover beat, feet stay on the floor throughout (this just sells
     # weight settling in, it is not the main crouch). Z values here are
     # placeholders only -- lock_wheels_to_floor overwrites every frame in
-    # 90-162 with the exact FK-derived height afterward, since the
+    # 90-LAUNCH_FRAME with the exact FK-derived height afterward, since the
     # hip-angle FK chain's effect on wheel height doesn't interpolate
     # linearly between hand-picked anchors (see that function's docstring).
     kf_leg_angle(legs, SETTLE_START, DEFAULT_HIP_ANGLE)
@@ -606,23 +615,48 @@ def build_balance_and_jump(base_plate, legs):
     kf_wheel_spin(legs, CROUCH_END, 0.0)
 
     # CROUCH_END-LAUNCH_FRAME: explosive jump -- legs stretch outward past
-    # the rest angle in a hard EASE_OUT snap, model leaves the floor.
+    # the rest angle in a hard EASE_OUT snap. z=0.0 is a placeholder --
+    # lock_wheels_to_floor's range now extends through LAUNCH_FRAME, so the
+    # foot stays planted while the leg pushes the body up (load-and-explode
+    # spring), instead of the body sitting still while the foot floats free.
     # Wheel-drive forward pulse fires over the same window (takeoff-physics
     # brief point 2: lock down the horizontal balance plane during launch).
     kf_leg_angle(legs, LAUNCH_FRAME, DEFAULT_HIP_ANGLE + 70.0, easing='EASE_OUT')
-    kf_loc(base_plate, LAUNCH_FRAME, (0.0, 0.0, 30.0), easing='EASE_OUT')
+    kf_loc(base_plate, LAUNCH_FRAME, (0.0, 0.0, 0.0), easing='EASE_OUT')
     kf_wheel_spin(legs, LAUNCH_FRAME, 18.0, easing='EASE_OUT')
 
+    # Real launch height: wheel-bottom offset with the leg fully extended
+    # (LAUNCH_FRAME's angle, just keyframed above) and base_plate.z=0 --
+    # i.e. how high the planted-foot push actually raises the body before
+    # the foot leaves the ground. Drives the ascent/descent physics below;
+    # NOT assumed to be 0 (that was the bug -- see docstring).
+    scene.frame_set(LAUNCH_FRAME)
+    base_plate.location.z = 0.0
+    bpy.context.view_layer.update()
+    launch_offset = min((legs['R']['wheel'].matrix_world @ Vector(c)).z
+                         for c in legs['R']['wheel'].bound_box)
+    launch_z_mm = (floor_z - launch_offset) / MM
+    ascent_mm = JUMP_APEX_MM - launch_z_mm
+    assert ascent_mm > 0, (
+        f"JUMP_APEX_MM ({JUMP_APEX_MM}mm) must clear the planted-foot launch "
+        f"height ({launch_z_mm:.1f}mm) or there's no ascent left to animate"
+    )
+    ascent_frames = round(math.sqrt(2.0 * (ascent_mm * MM) / GRAVITY) * fps)
+    descent_frames = round(math.sqrt(2.0 * (JUMP_APEX_MM * MM) / GRAVITY) * fps)
+    APEX_FRAME = LAUNCH_FRAME + ascent_frames
+    LANDING_FRAME = APEX_FRAME + descent_frames
+    STAND_FRAME = LANDING_FRAME + 40  # matches the original 205->245 spacing
+
     # LAUNCH_FRAME-APEX_FRAME: ascent -- legs relax back to exactly the
-    # rest angle (the only pose used while off the ground) while rising to
-    # JUMP_APEX_MM. Frame count is physics-derived (see docstring), not
-    # hand-picked.
+    # rest angle (the only pose used while off the ground) while rising the
+    # remaining (JUMP_APEX_MM - launch_z_mm) to JUMP_APEX_MM. Frame count
+    # is physics-derived from that real remaining height (see docstring).
     kf_leg_angle(legs, APEX_FRAME, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
     kf_loc(base_plate, APEX_FRAME, (0.0, 0.0, JUMP_APEX_MM), easing='EASE_OUT')
     kf_rot_x(base_plate, APEX_FRAME, -1.0)
 
-    # APEX_FRAME-LANDING_FRAME: descent -- symmetric free-fall back to the
-    # floor (same frame count as the ascent above), touchdown compression
+    # APEX_FRAME-LANDING_FRAME: descent -- free-fall the full JUMP_APEX_MM
+    # back down to floor level (base_plate.z=0), touchdown compression
     # absorbs the impact and the wheel-spin pulse relaxes back to zero.
     kf_loc(base_plate, LANDING_FRAME, (0.0, 0.0, 0.0), easing='EASE_IN')
     kf_rot_x(base_plate, LANDING_FRAME, 0.0)
@@ -643,54 +677,8 @@ def build_balance_and_jump(base_plate, legs):
     kf_leg_angle(legs, STAND_FRAME, DEFAULT_HIP_ANGLE)
     kf_wheel_pitch(legs, STAND_FRAME, 0.0)
 
-    lock_wheels_to_floor(base_plate, legs, floor_z, [(SETTLE_START, CROUCH_END), (LANDING_FRAME, STAND_FRAME)])
+    lock_wheels_to_floor(base_plate, legs, floor_z, [(SETTLE_START, LAUNCH_FRAME), (LANDING_FRAME, STAND_FRAME)])
     return STAND_FRAME
-
-
-def lock_wheels_to_floor(base_plate, legs, floor_z, frame_ranges):
-    """Densely re-keyframes base_plate's Z (every frame, in the given
-    ranges only) so the wheel bottom sits exactly at floor_z throughout --
-    not just at the hand-authored anchor frames above. The hip-angle FK
-    chain's contribution to wheel height is a nonlinear function of the
-    (already smoothly-keyframed) hip angle and chassis pitch, so bezier
-    interpolation between two *correct* anchor keyframes still drifts a
-    few mm off the floor at frames in between (measured up to -4.9mm mid-
-    crouch-ramp) -- sampling every frame removes that gap instead of
-    guessing more anchor points. Only applied to the two ranges that are
-    meant to stay grounded; the jump/airborne arc between them (CROUCH_END
-    to LANDING_FRAME, both physics-derived, see build_balance_and_jump) is
-    deliberately excluded since it's supposed to leave the floor.
-
-    Correction is derived from the R wheel only and applied to both (via
-    base_plate.z, shared by the whole chassis) -- correct as long as
-    kf_leg_angle always drives L and R to the identical angle, which it
-    does throughout this file. Asserted every sampled frame rather than
-    assumed, so a future asymmetric gait change (turning, per-leg balance
-    correction) fails loudly here instead of silently floating/sinking L.
-
-    This is a one-shot bake computed from the pose at script-build time --
-    if a live session (run_blender_python_live) re-keyframes a leg angle
-    inside these ranges afterward, this correction does NOT get re-run and
-    the bake goes stale for that frame. Re-run the whole model script (or
-    call this function again) after any such live edit.
-    """
-    scene = bpy.context.scene
-    wheel_r = legs['R']['wheel']
-    wheel_l = legs['L']['wheel']
-    for start, end in frame_ranges:
-        for f in range(start, end + 1):
-            scene.frame_set(f)
-            base_plate.location.z = 0.0
-            bpy.context.view_layer.update()
-            offset_r = min((wheel_r.matrix_world @ Vector(c)).z for c in wheel_r.bound_box)
-            offset_l = min((wheel_l.matrix_world @ Vector(c)).z for c in wheel_l.bound_box)
-            assert abs(offset_l - offset_r) < 0.001, (
-                f"frame {f}: L/R wheel-bottom offsets diverged "
-                f"({offset_l:.5f} vs {offset_r:.5f}) -- lock_wheels_to_floor "
-                "assumes symmetric legs and only corrects against R"
-            )
-            needed_z_mm = (floor_z - offset_r) / MM
-            kf_loc_z(base_plate, f, needed_z_mm, easing='EASE_IN_OUT')
 
 
 # ---------------------------------------------------------------------------

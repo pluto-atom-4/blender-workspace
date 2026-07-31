@@ -25,8 +25,9 @@ _SCRIPTS_DIR = "/home/pluto-atom-4/blender-workspace/blender-project/scripts"
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 from _model_common import (  # noqa: E402
-    MM, mm, mm_inv, AXIS_ROT, make_box, make_cylinder, merge_cutters,
+    MM, mm, mm_inv, make_box, make_cylinder, merge_cutters,
     boolean_diff_apply, set_ease, animate_assembly, kf_loc, kf_loc_z, kf_rot_x,
+    lock_wheels_to_floor,
 )
 
 # ---------------------------------------------------------------------------
@@ -351,31 +352,6 @@ def build_balance_and_jump(chassis, legs):
     # catches up, so 181 needs the same correction as the rest of the
     # grounded stance even though liftoff is already underway by 183.
     lock_wheels_to_floor(chassis, legs, floor_z, [(121, 181), (220, 250)])
-
-
-def lock_wheels_to_floor(chassis, legs, floor_z, frame_ranges):
-    """Densely re-keyframes chassis's Z (every frame, in the given ranges
-    only) so the wheel bottom sits exactly at floor_z -- ported from the
-    _precise sibling's fix for the same "sinking into the floor" bug
-    (issue #23). Derived from the R wheel and applied to both via
-    chassis.z (shared by the whole rig); asserted every frame rather than
-    assumed, since kf_joints always drives L/R identically here too."""
-    scene = bpy.context.scene
-    wheel_r = legs['R']['wheel']
-    wheel_l = legs['L']['wheel']
-    for start, end in frame_ranges:
-        for f in range(start, end + 1):
-            scene.frame_set(f)
-            chassis.location.z = 0.0
-            bpy.context.view_layer.update()
-            offset_r = min((wheel_r.matrix_world @ Vector(c)).z for c in wheel_r.bound_box)
-            offset_l = min((wheel_l.matrix_world @ Vector(c)).z for c in wheel_l.bound_box)
-            assert abs(offset_l - offset_r) < 0.001, (
-                f"frame {f}: L/R wheel-bottom offsets diverged "
-                f"({offset_l:.5f} vs {offset_r:.5f})"
-            )
-            needed_z_mm = (floor_z - offset_r) / MM
-            kf_loc_z(chassis, f, needed_z_mm, easing='EASE_IN_OUT')
 
 
 # ---------------------------------------------------------------------------
