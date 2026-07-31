@@ -415,9 +415,10 @@ HIP_LATERAL = 50.0  # wheel centers 2*HIP_LATERAL=100mm apart; WHEEL_R=40mm need
                      # >=80mm to just touch, so this leaves a 20mm clearance gap
 HIP_Z = 20.0       # height of the hip pivot above the base plate
 ANKLE_DROP = 10.0  # ankle block center below the lower plate's tail
-DEFAULT_HIP_ANGLE = 58.0  # resting-stance hip bend -- matches the leg's
-                           # fully-outward-snapped angle from frame 168 of
-                           # the jump animation, used as the new rest pose
+DEFAULT_HIP_ANGLE = 58.0  # resting-stance hip bend -- the rest pose used at
+                           # both ends of the animation and while balancing;
+                           # the jump snap (frame 168) goes DEFAULT+70deg
+                           # from here, it does not itself equal this value
 WHEEL_STUB = 22.0  # axle standoff between the wheel-servo body and the wheel
                     # disc -- without it the servo body (which extends
                     # SERVO_H=36mm from its pivot) clips straight through the
@@ -440,8 +441,15 @@ def build_leg(side, collection, base_plate, rear_ext):
     horn = build_servo_horn_bracket(collection, tag, sign)
     horn.parent = hip_servo
 
-    hip_knuckle = build_knuckle(f"{tag}_HipKnuckle", collection, location_mm=hip_world)
-    hip_knuckle.parent = base_plate
+    # One bolt-head knuckle per plate (matching the reference hardware's
+    # sandwiched fork -- two pivot points, PLATE_GAP apart in Y), not a
+    # single one straddling both.
+    hip_knuckle_front = build_knuckle(f"{tag}_HipKnuckleFront", collection,
+                                       location_mm=(hip_world[0], hip_world[1] + PLATE_GAP / 2, hip_world[2]))
+    hip_knuckle_front.parent = base_plate
+    hip_knuckle_back = build_knuckle(f"{tag}_HipKnuckleBack", collection,
+                                      location_mm=(hip_world[0], hip_world[1] - PLATE_GAP / 2, hip_world[2]))
+    hip_knuckle_back.parent = base_plate
 
     # Two thin plates sandwiching the hip/knee pivots (a fork), offset apart
     # laterally by PLATE_GAP. Both rotate identically -- a rigid doubled bar,
@@ -609,6 +617,16 @@ def kf_wheel_pitch(legs, frame, deg, easing='EASE_IN_OUT'):
         kf_rot_x(leg['wheel_servo'], frame, deg, easing=easing)
 
 
+def balance_oscillation(base_plate, legs, frames, pitches):
+    """IMU self-balance wobble: chassis pitch plus a 0.6x-coupled wheel
+    counter-tilt, at the given (frame, degrees) pairs. Shared by both
+    balance windows (98-140 pre-jump, 205-235 post-landing) so they can't
+    silently diverge in behavior."""
+    for f, p in zip(frames, pitches):
+        kf_rot_x(base_plate, f, p)
+        kf_wheel_pitch(legs, f, p * 0.6)
+
+
 def build_balance_and_jump(base_plate, legs):
     """Rebuilt from scratch per the assemble->stand->jump spec (issue #23
     follow-up): every leg pose is DEFAULT_HIP_ANGLE=58deg plus or minus an
@@ -641,6 +659,15 @@ def build_balance_and_jump(base_plate, legs):
     base_plate's required Z every frame in the grounded ranges instead of
     trusting hand-picked anchor values to interpolate correctly in between.
     """
+    # Boundary frames for the two grounded ranges lock_wheels_to_floor
+    # corrects -- named once here and reused at every call site below (and
+    # in the lock_wheels_to_floor call itself) so retiming a phase can't
+    # silently desync the correction range from the anchors it covers.
+    SETTLE_START = 90
+    CROUCH_END = 162
+    LANDING_FRAME = 205
+    STAND_FRAME = 245
+
     scene = bpy.context.scene
     # Reference "floor" height: wheel-bottom world Z at the rig's static
     # built pose (hip=DEFAULT_HIP_ANGLE, base_plate.z=0). No leg-angle or
@@ -648,7 +675,7 @@ def build_balance_and_jump(base_plate, legs):
     # assembly animation (already keyframed by build_exploded_view) holds
     # base_plate at its assembled position by frame 90, so evaluating here
     # gives the exact same rest-pose reference used throughout this file.
-    scene.frame_set(90)
+    scene.frame_set(SETTLE_START)
     bpy.context.view_layer.update()
     floor_z = min((legs['R']['wheel'].matrix_world @ Vector(c)).z
                    for c in legs['R']['wheel'].bound_box)
@@ -660,8 +687,8 @@ def build_balance_and_jump(base_plate, legs):
     # 90-162 with the exact FK-derived height afterward, since the
     # hip-angle FK chain's effect on wheel height doesn't interpolate
     # linearly between hand-picked anchors (see that function's docstring).
-    kf_leg_angle(legs, 90, DEFAULT_HIP_ANGLE)
-    kf_loc(base_plate, 90, (0.0, 0.0, 0.0))
+    kf_leg_angle(legs, SETTLE_START, DEFAULT_HIP_ANGLE)
+    kf_loc(base_plate, SETTLE_START, (0.0, 0.0, 0.0))
     kf_leg_angle(legs, 94, DEFAULT_HIP_ANGLE - 8.0, easing='EASE_OUT')
     kf_loc(base_plate, 94, (0.0, 0.0, 0.0), easing='EASE_OUT')
     kf_leg_angle(legs, 98, DEFAULT_HIP_ANGLE)
@@ -669,15 +696,11 @@ def build_balance_and_jump(base_plate, legs):
 
     # 98-140: IMU balance -- chassis AND wheel micro pitch oscillation,
     # legs held at the rest angle, feet flat on the floor (z=0 throughout).
-    osc_frames = [98, 111, 124, 132, 140]
-    osc_pitch = [0.0, 1.5, -1.4, 1.2, 0.0]
-    for f, p in zip(osc_frames, osc_pitch):
-        kf_rot_x(base_plate, f, p)
-        kf_wheel_pitch(legs, f, p * 0.6)
+    balance_oscillation(base_plate, legs, [98, 111, 124, 132, 140], [0.0, 1.5, -1.4, 1.2, 0.0])
     kf_leg_angle(legs, 140, DEFAULT_HIP_ANGLE)
 
-    # 140-162: crouch -- >=20% compression off the rest angle (using 34%:
-    # 58 -> 38), chassis stays flat and grounded. z=0.0 here is a
+    # 140-CROUCH_END: crouch -- >=20% compression off the rest angle (using
+    # 34%: 58 -> 38), chassis stays flat and grounded. z=0.0 here is a
     # placeholder -- lock_wheels_to_floor overwrites it (and every frame in
     # between) with the FK-derived height needed to keep the wheel bottomed
     # out on the floor instead of sinking through it.
@@ -685,12 +708,13 @@ def build_balance_and_jump(base_plate, legs):
     kf_rot_x(base_plate, 141, 0.0)
     kf_leg_angle(legs, 141, DEFAULT_HIP_ANGLE)
     kf_loc(base_plate, 141, (0.0, 0.0, 0.0))
-    kf_rot_x(base_plate, 162, 0.0)
-    kf_leg_angle(legs, 162, CROUCH_ANGLE, easing='EASE_IN_OUT')
-    kf_loc(base_plate, 162, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
+    kf_rot_x(base_plate, CROUCH_END, 0.0)
+    kf_leg_angle(legs, CROUCH_END, CROUCH_ANGLE, easing='EASE_IN_OUT')
+    kf_loc(base_plate, CROUCH_END, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
 
-    # 162-172: explosive jump -- legs stretch outward past the rest angle
-    # in a hard EASE_OUT snap, model leaves the floor on a parabolic Z path.
+    # CROUCH_END-172: explosive jump -- legs stretch outward past the rest
+    # angle in a hard EASE_OUT snap, model leaves the floor on a parabolic
+    # Z path.
     kf_leg_angle(legs, 168, DEFAULT_HIP_ANGLE + 70.0, easing='EASE_OUT')
     kf_loc(base_plate, 168, (0.0, 0.0, 30.0), easing='EASE_OUT')
 
@@ -700,35 +724,31 @@ def build_balance_and_jump(base_plate, legs):
     kf_loc(base_plate, 180, (0.0, 0.0, 95.0), easing='EASE_OUT')  # apex
     kf_rot_x(base_plate, 180, -1.0)
 
-    # 190-205: landing -- fall back to the floor, touchdown compression
-    # absorbs the impact.
+    # 190-LANDING_FRAME: landing -- fall back to the floor, touchdown
+    # compression absorbs the impact.
     kf_loc(base_plate, 190, (0.0, 0.0, 20.0), easing='EASE_IN')
     kf_rot_x(base_plate, 190, 0.0)
     kf_leg_angle(legs, 190, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
 
     # impact absorb -- legs fold back to CROUCH_ANGLE on touchdown. z=0.0
-    # is a placeholder, overwritten by lock_wheels_to_floor (205-245 range)
-    # same as the 140-162 crouch above.
-    kf_loc(base_plate, 205, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
-    kf_leg_angle(legs, 205, CROUCH_ANGLE, easing='EASE_IN_OUT')
+    # is a placeholder, overwritten by lock_wheels_to_floor (LANDING_FRAME-
+    # STAND_FRAME range) same as the crouch above.
+    kf_loc(base_plate, LANDING_FRAME, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
+    kf_leg_angle(legs, LANDING_FRAME, CROUCH_ANGLE, easing='EASE_IN_OUT')
 
-    # 205-235: balance again, feet flat on the floor.
+    # LANDING_FRAME-235: balance again, feet flat on the floor.
     kf_loc(base_plate, 210, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
     kf_leg_angle(legs, 210, DEFAULT_HIP_ANGLE)
-    osc_frames2 = [210, 218, 226, 231, 235]
-    osc_pitch2 = [0.0, 1.3, -1.2, 0.8, 0.0]
-    for f, p in zip(osc_frames2, osc_pitch2):
-        kf_rot_x(base_plate, f, p)
-        kf_wheel_pitch(legs, f, p * 0.6)
+    balance_oscillation(base_plate, legs, [210, 218, 226, 231, 235], [0.0, 1.3, -1.2, 0.8, 0.0])
     kf_leg_angle(legs, 235, DEFAULT_HIP_ANGLE)
 
-    # 235-245: stable stand -- exact rest pose, held.
-    kf_loc(base_plate, 245, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
-    kf_rot_x(base_plate, 245, 0.0)
-    kf_leg_angle(legs, 245, DEFAULT_HIP_ANGLE)
-    kf_wheel_pitch(legs, 245, 0.0)
+    # 235-STAND_FRAME: stable stand -- exact rest pose, held.
+    kf_loc(base_plate, STAND_FRAME, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
+    kf_rot_x(base_plate, STAND_FRAME, 0.0)
+    kf_leg_angle(legs, STAND_FRAME, DEFAULT_HIP_ANGLE)
+    kf_wheel_pitch(legs, STAND_FRAME, 0.0)
 
-    lock_wheels_to_floor(base_plate, legs, floor_z, [(90, 162), (205, 245)])
+    lock_wheels_to_floor(base_plate, legs, floor_z, [(SETTLE_START, CROUCH_END), (LANDING_FRAME, STAND_FRAME)])
 
 
 def lock_wheels_to_floor(base_plate, legs, floor_z, frame_ranges):
