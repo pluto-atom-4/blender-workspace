@@ -387,10 +387,12 @@ WHEEL_W = 16.0
 # 5. Assembly: sandwich stack + forked-plate leg FK chain
 #
 #    Chassis stack: BasePlate -> Standoffs / RearExtension / (Deck -> Atom S3)
-#    Leg (per side): RearExtension -> HipServo -> UpperPlateFront \
-#                                                  UpperPlateBack   > KneeKnuckle
-#                     KneeKnuckle -> LowerPlate -> AnkleBlock
-#                                 -> WheelServo(inverted) -> WheelHub
+#    Leg (per side): BasePlate -> HipServo, UpperPlateFront, UpperPlateBack
+#                     (all three parent directly to BasePlate as siblings,
+#                     not chained through RearExtension or through each
+#                     other -- RearExtension is a visual chassis tab only)
+#                     UpperPlateFront -> KneeKnuckle -> LowerPlate -> AnkleBlock
+#                                                     -> WheelServo(inverted) -> WheelHub
 #
 #    Matches the reference hardware's leg: two thin plates sandwich the hip
 #    and knee pivots (a fork, for a wider/stiffer bearing surface than one
@@ -426,17 +428,24 @@ WHEEL_STUB = 22.0  # axle standoff between the wheel-servo body and the wheel
                     # the same axle/spline pivot by construction
 
 
-def build_leg(side, collection, base_plate, rear_ext):
+def build_leg(side, collection, base_plate):
     sign = 1.0 if side == 'R' else -1.0
     tag = f"DWLRP_{side}"
 
     hip_world = (sign * HIP_LATERAL, -BASE_L / 2 - REAR_EXT_T, HIP_Z)
+    default_rad = math.radians(DEFAULT_HIP_ANGLE)
 
     # Hip servo: mounted horizontally under the rear deck, its output spline
     # coincides with the hip pivot axis -- the servo horn bracket is the
-    # visual link from servo body to the upper plates' pivot.
+    # visual link from servo body to the upper plates' pivot. Per
+    # build_servo()'s own contract ("Caller animates rotation_euler.x
+    # directly as the joint angle"), hip_servo's rotation IS the joint
+    # angle, same as upper_plate_front/back -- kf_leg_angle drives all
+    # three together so the horn bracket stays bolted to the plate instead
+    # of freezing at the static build pose while the plate sweeps away.
     hip_servo = build_servo(f"{tag}_HipServo", collection, sign)
     hip_servo.location = mm(*hip_world)
+    hip_servo.rotation_euler.x = default_rad
     hip_servo.parent = base_plate
     horn = build_servo_horn_bracket(collection, tag, sign)
     horn.parent = hip_servo
@@ -460,8 +469,6 @@ def build_leg(side, collection, base_plate, rear_ext):
     # from this same value, so there's no snap when balancing motion starts;
     # frames 1-89 (exploded assembly) show the hinged stance throughout since
     # nothing keyframes rotation before frame 90.
-    default_rad = math.radians(DEFAULT_HIP_ANGLE)
-
     upper_plate_front = build_link_bar(f"{tag}_UpperPlateFront", collection, UPPER_LEN,
                                         width_mm=9.0, thick_mm=3.0)
     upper_plate_front.location = mm(hip_world[0], hip_world[1] + PLATE_GAP / 2, hip_world[2])
@@ -557,9 +564,10 @@ def kf_loc(obj, frame, loc_mm, interp='BEZIER', easing='EASE_IN_OUT'):
     obj.keyframe_insert(data_path="location", frame=frame)
     if obj.animation_data and obj.animation_data.action:
         for fc in obj.animation_data.action.fcurves:
-            kp = fc.keyframe_points[-1]
-            kp.interpolation = interp
-            kp.easing = easing
+            if fc.data_path == "location":
+                kp = fc.keyframe_points[-1]
+                kp.interpolation = interp
+                kp.easing = easing
 
 
 def kf_rot_x(obj, frame, deg, interp='BEZIER', easing='EASE_IN_OUT'):
@@ -605,8 +613,13 @@ def kf_leg_angle(legs, frame, angle_deg, easing='EASE_IN_OUT'):
     and counter-rotate the knee knuckle by the same amount so the lower
     plate/ankle/wheel subtree it carries never accumulates net rotation --
     the wheel stays level through the full range of motion with only the
-    hip actuated, same as the parallelogram coupler this replaced."""
+    hip actuated, same as the parallelogram coupler this replaced. Also
+    drives hip_servo to the same angle -- its rotation_euler.x IS the joint
+    axis (see build_servo's docstring), so without this the servo body and
+    its horn bracket would stay frozen at the static build pose while the
+    plates it's bolted to sweep away from it."""
     for leg in legs.values():
+        kf_rot_x(leg['hip_servo'], frame, angle_deg, easing=easing)
         kf_rot_x(leg['upper_plate_front'], frame, angle_deg, easing=easing)
         kf_rot_x(leg['upper_plate_back'], frame, angle_deg, easing=easing)
         kf_rot_x(leg['knee_knuckle'], frame, -angle_deg, easing=easing)
@@ -763,16 +776,36 @@ def lock_wheels_to_floor(base_plate, legs, floor_z, frame_ranges):
     guessing more anchor points. Only applied to the two ranges that are
     meant to stay grounded; the 162-205 jump/airborne arc is deliberately
     excluded since it's supposed to leave the floor.
+
+    Correction is derived from the R wheel only and applied to both (via
+    base_plate.z, shared by the whole chassis) -- correct as long as
+    kf_leg_angle always drives L and R to the identical angle, which it
+    does throughout this file. Asserted every sampled frame rather than
+    assumed, so a future asymmetric gait change (turning, per-leg balance
+    correction) fails loudly here instead of silently floating/sinking L.
+
+    This is a one-shot bake computed from the pose at script-build time --
+    if a live session (run_blender_python_live) re-keyframes a leg angle
+    inside these ranges afterward, this correction does NOT get re-run and
+    the bake goes stale for that frame. Re-run the whole model script (or
+    call this function again) after any such live edit.
     """
     scene = bpy.context.scene
-    wheel = legs['R']['wheel']
+    wheel_r = legs['R']['wheel']
+    wheel_l = legs['L']['wheel']
     for start, end in frame_ranges:
         for f in range(start, end + 1):
             scene.frame_set(f)
             base_plate.location.z = 0.0
             bpy.context.view_layer.update()
-            offset = min((wheel.matrix_world @ Vector(c)).z for c in wheel.bound_box)
-            needed_z_mm = (floor_z - offset) / MM
+            offset_r = min((wheel_r.matrix_world @ Vector(c)).z for c in wheel_r.bound_box)
+            offset_l = min((wheel_l.matrix_world @ Vector(c)).z for c in wheel_l.bound_box)
+            assert abs(offset_l - offset_r) < 0.001, (
+                f"frame {f}: L/R wheel-bottom offsets diverged "
+                f"({offset_l:.5f} vs {offset_r:.5f}) -- lock_wheels_to_floor "
+                "assumes symmetric legs and only corrects against R"
+            )
+            needed_z_mm = (floor_z - offset_r) / MM
             kf_loc(base_plate, f, (0.0, 0.0, needed_z_mm), easing='EASE_IN_OUT')
 
 
@@ -811,8 +844,8 @@ def main():
     rear_ext.parent = base_plate
 
     legs = {
-        'R': build_leg('R', collection, base_plate, rear_ext),
-        'L': build_leg('L', collection, base_plate, rear_ext),
+        'R': build_leg('R', collection, base_plate),
+        'L': build_leg('L', collection, base_plate),
     }
 
     build_exploded_view(base_plate, standoffs, deck, battery, atom, rear_ext, legs)

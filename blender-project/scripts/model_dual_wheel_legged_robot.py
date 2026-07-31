@@ -429,9 +429,10 @@ def kf_loc(obj, frame, loc_mm, interp='BEZIER', easing='EASE_IN_OUT'):
     obj.keyframe_insert(data_path="location", frame=frame)
     if obj.animation_data and obj.animation_data.action:
         for fc in obj.animation_data.action.fcurves:
-            kp = fc.keyframe_points[-1]
-            kp.interpolation = interp
-            kp.easing = easing
+            if fc.data_path == "location":
+                kp = fc.keyframe_points[-1]
+                kp.interpolation = interp
+                kp.easing = easing
 
 
 def kf_rot_x(obj, frame, deg, interp='BEZIER', easing='EASE_IN_OUT'):
@@ -536,6 +537,16 @@ def main():
 
     print("Dual-Wheel Legged Balancing Robot build complete.")
     print(f"Objects created: {len(collection.objects)}")
+
+    if bpy.app.background:
+        # Headless (render pipeline) run -- persist the build per the
+        # model_<subject>.py contract in DESIGN.md. Skipped when run live via
+        # run_blender_python_live so it never hijacks the GUI session's own
+        # open file. Matches model_pendulum.py / the _precise sibling.
+        bpy.ops.wm.save_as_mainfile(
+            filepath="/home/pluto-atom-4/blender-workspace/blender-project/renders/model_dual_wheel_legged_robot.blend",
+            check_existing=False,
+        )
 
 
 main()
