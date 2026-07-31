@@ -495,9 +495,23 @@ def balance_oscillation(base_plate, legs, frames, pitches):
         kf_wheel_pitch(legs, f, p * 0.6)
 
 
-JUMP_APEX_MM = 300.0  # height off the floor at the arc's peak
 GRAVITY = 9.8  # m/s^2
 LAUNCH_FRAME = 168  # explosive snap lands here; wheel leaves the floor
+
+# CROUCH_ANGLE and LAUNCH_ANGLE are NOT DEFAULT_HIP_ANGLE +/- an offset --
+# empirically swept needed-chassis-Z against hip angle across the leg's
+# full range (issue #23 code review) and it is a SINGLE MONOTONIC curve,
+# decreasing as angle increases, with no local min/max to exploit: smaller
+# angles hold the chassis higher (taller stance), larger angles let it
+# drop lower (crouch), passing through 0 at DEFAULT_HIP_ANGLE=58. A
+# previous version had these backwards -- CROUCH_ANGLE below 58 (which
+# actually raises the chassis) and the push angle above 58 (which actually
+# lowers it) -- so the labeled "crouch" stood the robot up taller and the
+# labeled "explosive push" sank it further down right before liftoff.
+# Sampled values (needed base_plate.z in mm, at 5deg steps):
+#   15deg->+17.4  38deg->+10.3  58deg->0  90deg->-21.2  120deg->-41.2
+CROUCH_ANGLE = 120.0   # deep crouch: chassis genuinely lowers, stores energy
+LAUNCH_ANGLE = 15.0    # explosive extension: chassis genuinely rises
 
 
 def build_balance_and_jump(base_plate, legs):
@@ -507,38 +521,48 @@ def build_balance_and_jump(base_plate, legs):
     model's feet are on the floor (base_plate.z == 0) at both ends of the
     clip, only leaving the ground for the single jump arc in the middle.
 
-    The airborne arc's ascent/descent frame counts are derived from real
-    projectile motion under constant gravity (t = sqrt(2*h/g)) rather than
-    hand-picked -- but ascent and descent are NOT forced symmetric, because
-    they are not the same height. The leg stays planted through the whole
-    162-LAUNCH_FRAME snap (lock_wheels_to_floor now covers that window
-    too), so launch_z (measured off the actual LAUNCH_FRAME leg pose, not
-    assumed) is the real base_plate.z the moment the foot leaves the
-    ground. For THIS rig's specific link geometry that number comes out
-    NEGATIVE (~-36mm at JUMP_APEX_MM=300 -- the parallelogram's cosine
-    relationship means the chassis actually dips lower as the hip angle
-    swings past the rest pose toward full extension, not pre-lifted), so
-    ascent_mm = JUMP_APEX_MM - launch_z ends up LARGER than JUMP_APEX_MM
-    itself, not "the remaining height" -- the body has to climb back up
-    through its own launch dip before it even reaches the floor-level
-    reference, then continue to the apex. Whatever sign launch_z takes,
-    this stays correct: it is always the literal height gained between
-    LAUNCH_FRAME and APEX_FRAME. Descent is a separate, simpler free-fall
-    of the full JUMP_APEX_MM back down to the floor-level reference
-    (base_plate.z=0) -- landing keyframes CROUCH_ANGLE, not
-    DEFAULT_HIP_ANGLE (touchdown is meant to look like an impact-absorbing
-    crouch, not a stiff-legged landing), so lock_wheels_to_floor's second
-    range (which starts at LANDING_FRAME) nudges the actual contact height
-    a few mm off exactly 0 to match that pose; descent_frames uses the
-    z=0 reference purely for timing and is a close approximation, not
-    exact, but lock_wheels_to_floor still guarantees zero clipping at
-    LANDING_FRAME itself regardless. An earlier version measured ascent
-    from an assumed z=0 launch point while the leg was actually already
-    partway extended at LAUNCH_FRAME (base_plate.z=30mm, hand-picked, not
-    derived) -- silently ~30mm short of the real launch height (issue #23
-    code review). Phase frames below are computed at each build, so
-    retuning JUMP_APEX_MM keeps the whole timeline physically consistent
-    instead of needing every downstream frame number hand-updated too:
+    Rebuilt again (issue #23 code review) after simulating the actual
+    per-frame chassis motion and finding two physics problems:
+
+    1. CROUCH_ANGLE/the push angle were on the WRONG SIDES of
+       DEFAULT_HIP_ANGLE. Sweeping needed-chassis-Z against hip angle
+       across the leg's full range shows ONE monotonic curve (decreasing
+       as angle increases, no local min/max -- see CROUCH_ANGLE/
+       LAUNCH_ANGLE's own comment for the sampled values): smaller angles
+       hold the chassis HIGHER, larger angles let it drop LOWER. The
+       previous CROUCH_ANGLE (38, below 58) therefore stood the robot up
+       TALLER, and the previous push angle (128, above 58) sank it
+       FURTHER DOWN right before liftoff -- both backwards from what
+       "crouch to store energy, explode upward" needs. Now CROUCH_ANGLE
+       (120, above 58) genuinely lowers the chassis and LAUNCH_ANGLE (15,
+       below 58) genuinely raises it -- the push phase is a real ~59mm
+       rise while the foot is still planted.
+    2. The ascent used to derive its height from an independently-chosen
+       JUMP_APEX_MM, with no connection to the velocity the planted-foot
+       push actually produced -- simulated per-frame Z showed the chassis
+       nearly stationary the frame before LAUNCH_FRAME (dz=+0.26mm) then
+       "teleporting" to dz=+102.57mm the frame after, a ~390x
+       discontinuity with no physical cause. The ascent now measures the
+       REAL liftoff velocity (v0, two FK evaluations of the already-
+       keyframed push right at the LAUNCH_FRAME boundary) and derives
+       apex height/ascent time FROM that v0 (h=v0^2/2g, t=v0/g) --
+       APEX_Z_MM and ascent_frames are OUTPUTS of the push's own motion,
+       not independent inputs, so there is no discontinuity at liftoff.
+       Descent is a separate, simpler free-fall of the resulting
+       APEX_Z_MM back down to the floor-level reference (base_plate.z=0)
+       -- landing keyframes CROUCH_ANGLE, not DEFAULT_HIP_ANGLE (touchdown
+       is meant to look like an impact-absorbing crouch, not a stiff-
+       legged landing), so lock_wheels_to_floor's second range (which
+       starts at LANDING_FRAME) nudges the actual contact height a few mm
+       off exactly 0 to match that pose; descent_frames uses the z=0
+       reference purely for timing and is a close approximation, not
+       exact, but lock_wheels_to_floor still guarantees zero clipping at
+       LANDING_FRAME itself regardless.
+
+    Phase frames below are computed at each build (from CROUCH_ANGLE/
+    LAUNCH_ANGLE and the real liftoff velocity they produce), so retuning
+    either angle keeps the whole timeline physically consistent instead of
+    needing every downstream frame number hand-updated too:
 
       90-98    Touchdown settle: assembly (1-90) already ends grounded at
                z=0/58deg: a small absorb-and-recover dip sells the parts
@@ -546,24 +570,25 @@ def build_balance_and_jump(base_plate, legs):
       98-140   Balancing: +/-1.5deg pitch oscillation on chassis AND wheels
                (IMU self-balancing) while feet stay flat on the floor, legs
                held at the rest angle (58deg).
-      140-162  Crouch: hip angle compresses >=20% off 58deg (58->38, a 34%
-               reduction) as anticipation, chassis stays flat/level.
+      140-162  Crouch: hip angle swings from 58 to CROUCH_ANGLE (120),
+               genuinely lowering the chassis (anticipation, storing
+               energy), chassis stays flat/level.
       162-LAUNCH_FRAME  Explosive Jump (load-and-explode spring): legs
-               stretch outward past the rest angle (58+70=128deg) in a
-               fast EASE_OUT snap while the foot stays locked to the floor
-               (lock_wheels_to_floor covers this window) -- the leg pushes
-               the body up from the planted foot, same as a real spring
-               extending against the ground, rather than the foot floating
-               free while the body stays put. A forward wheel-spin pulse
-               (kf_wheel_spin) fires over the same window -- "pulse the
-               wheel drive motors forward slightly to lock down the
+               snap from CROUCH_ANGLE to LAUNCH_ANGLE (120->15) in a fast
+               EXPO/EASE_OUT burst while the foot stays locked to the
+               floor (lock_wheels_to_floor covers this window) -- the leg
+               pushes the body up from the planted foot, same as a real
+               spring extending against the ground, and the chassis
+               genuinely rises (~59mm) doing it. A forward wheel-spin
+               pulse (kf_wheel_spin) fires over the same window -- "pulse
+               the wheel drive motors forward slightly to lock down the
                horizontal balance plane" per the takeoff-physics brief.
       LAUNCH_FRAME-APEX_FRAME  Ascent: legs relax back to exactly
-               DEFAULT_HIP_ANGLE (58) while climbing (JUMP_APEX_MM -
-               launch_z) -- the real height gained from wherever launch_z
-               actually is, sign and all -- to JUMP_APEX_MM under gravity.
+               DEFAULT_HIP_ANGLE (58) while coasting up on the push's own
+               real liftoff velocity to APEX_Z_MM -- no discontinuity at
+               LAUNCH_FRAME (see above).
       APEX_FRAME-LANDING_FRAME  Descent: free-fall (approximately)
-               JUMP_APEX_MM back down to the floor-level reference, where
+               APEX_Z_MM back down to the floor-level reference, where
                the impact-absorb crouch (CROUCH_ANGLE) touches down --
                lock_wheels_to_floor corrects the exact contact height.
       LANDING_FRAME  Landing: touchdown compression absorbs the impact
@@ -641,7 +666,6 @@ def build_balance_and_jump(base_plate, legs):
     # LAST locked frame, so its shape controls the real, unlocked ascent
     # after it) -- that one is set via lock_wheels_to_floor's
     # boundary_shapes param below, not here, for the same reason.
-    CROUCH_ANGLE = DEFAULT_HIP_ANGLE - 20.0  # 58 -> 38, a 34% reduction
     kf_rot_x(base_plate, 141, 0.0)
     # Load: starts slow, accelerates down into full compression over
     # 141->CROUCH_END -- reads as the spring winding up under building
@@ -652,67 +676,82 @@ def build_balance_and_jump(base_plate, legs):
     kf_wheel_spin(legs, CROUCH_END, 0.0)
 
     # CROUCH_END-LAUNCH_FRAME: explosive jump -- legs stretch outward past
-    # the rest angle in a genuinely explosive EXPO/EASE_OUT snap (set on
-    # CROUCH_END, which governs this outgoing segment -- near-all the
-    # motion front-loaded into the first frame or two, tapering off, not
-    # BEZIER's symmetric bell curve). lock_wheels_to_floor's range now
-    # extends through LAUNCH_FRAME, so the foot stays planted while the leg
-    # pushes the body up (load-and-explode spring), instead of the body
-    # sitting still while the foot floats free. Wheel-drive forward pulse
-    # fires over the same window (takeoff-physics brief point 2: lock down
-    # the horizontal balance plane during launch).
-    kf_leg_angle(legs, CROUCH_END, CROUCH_ANGLE, easing='EASE_OUT', interp='EXPO')
+    # the rest angle in a spring RELEASE: EXPO/EASE_IN (set on CROUCH_END,
+    # which governs this outgoing segment), near-motionless at first (the
+    # leg still winding up against the planted foot) then a massive
+    # velocity spike right at the very end -- deliberately the opposite of
+    # EASE_OUT. A push that DEcelerates into LAUNCH_FRAME leaves the
+    # chassis nearly stationary the instant it's supposed to leave the
+    # ground (issue #23 code review: measured a ~390x velocity
+    # discontinuity into the ascent from exactly that mistake) -- real
+    # liftoff needs maximum velocity AT the moment of separation, which
+    # means ACcelerating through the whole push, not decelerating into it.
+    # lock_wheels_to_floor's range now extends through LAUNCH_FRAME, so the
+    # foot stays planted while the leg pushes the body up (load-and-explode
+    # spring), instead of the body sitting still while the foot floats
+    # free. Wheel-drive forward pulse fires over the same window (takeoff-
+    # physics brief point 2: lock down the horizontal balance plane during
+    # launch).
+    kf_leg_angle(legs, CROUCH_END, CROUCH_ANGLE, easing='EASE_IN', interp='EXPO')
     kf_loc(base_plate, CROUCH_END, (0.0, 0.0, 0.0))
     # LAUNCH_FRAME's rotation easing governs the leg's outgoing ascent
     # shape directly (EASE_OUT/QUAD, a physically-plausible decelerating
     # rise); its Z-location shape for the same segment is set via
     # lock_wheels_to_floor's boundary_shapes below instead, since this
     # kf_loc call's own shape would otherwise be overwritten there anyway.
-    kf_leg_angle(legs, LAUNCH_FRAME, DEFAULT_HIP_ANGLE + 70.0, easing='EASE_OUT', interp='QUAD')
+    kf_leg_angle(legs, LAUNCH_FRAME, LAUNCH_ANGLE, easing='EASE_OUT', interp='QUAD')
     kf_loc(base_plate, LAUNCH_FRAME, (0.0, 0.0, 0.0))
     kf_wheel_spin(legs, LAUNCH_FRAME, 18.0)
 
-    # Real launch height: wheel-bottom offset with the leg fully extended
-    # (LAUNCH_FRAME's angle, just keyframed above) and base_plate.z=0 --
-    # i.e. how high the planted-foot push actually raises the body before
-    # the foot leaves the ground. Drives the ascent/descent physics below;
-    # NOT assumed to be 0 (that was the bug -- see docstring).
-    scene.frame_set(LAUNCH_FRAME)
-    base_plate.location.z = 0.0
-    bpy.context.view_layer.update()
-    launch_offset = min((legs['R']['wheel'].matrix_world @ Vector(c)).z
-                         for c in legs['R']['wheel'].bound_box)
-    launch_z_mm = (floor_z - launch_offset) / MM
-    # launch_z_mm can legitimately be negative for this rig's link geometry
-    # (see docstring) -- ascent_mm is the real height gained regardless of
-    # launch_z_mm's sign, and this assert guards the one case that's
-    # actually invalid: JUMP_APEX_MM set at or below wherever the body
-    # ends up at launch, leaving no ascent to animate at all.
-    ascent_mm = JUMP_APEX_MM - launch_z_mm
-    assert ascent_mm > 0, (
-        f"JUMP_APEX_MM ({JUMP_APEX_MM}mm) must be above the actual launch "
-        f"height ({launch_z_mm:.1f}mm) or there's no ascent left to animate"
+    # Velocity continuity at liftoff (issue #23 code review): the ascent
+    # must start with the SAME vertical velocity the planted-foot push
+    # actually ends with, not an independently-chosen apex height's
+    # implied v0 -- otherwise the chassis is nearly stationary the frame
+    # before LAUNCH_FRAME and "teleports" into a large upward velocity the
+    # frame after (previously measured: dz=+0.26mm going in, +102.57mm mm
+    # coming out, a ~390x discontinuity). Measured here from two real FK
+    # evaluations of the already-keyframed crouch/push curve (base_plate.z
+    # temporarily overridden to 0 for each, matching floor_z's own
+    # measurement convention), not assumed.
+    def locked_z_mm(frame):
+        scene.frame_set(frame)
+        base_plate.location.z = 0.0
+        bpy.context.view_layer.update()
+        offset = min((legs['R']['wheel'].matrix_world @ Vector(c)).z
+                      for c in legs['R']['wheel'].bound_box)
+        return (floor_z - offset) / MM
+
+    launch_z_mm = locked_z_mm(LAUNCH_FRAME)
+    prelaunch_z_mm = locked_z_mm(LAUNCH_FRAME - 1)
+    v0_mm_per_frame = launch_z_mm - prelaunch_z_mm
+    v0 = (v0_mm_per_frame * MM) * fps  # m/s, real liftoff velocity
+    assert v0 > 0, (
+        f"liftoff velocity ({v0:.3f} m/s) must be positive -- the planted-"
+        "foot push isn't still rising the frame it leaves the ground"
     )
-    ascent_frames = round(math.sqrt(2.0 * (ascent_mm * MM) / GRAVITY) * fps)
-    descent_frames = round(math.sqrt(2.0 * (JUMP_APEX_MM * MM) / GRAVITY) * fps)
+    apex_gain_mm = (v0 * v0) / (2.0 * GRAVITY) / MM  # height climbed under pure momentum
+    APEX_Z_MM = launch_z_mm + apex_gain_mm
+    ascent_frames = round((v0 / GRAVITY) * fps)  # time to decelerate v0 -> 0
+    descent_frames = round(math.sqrt(2.0 * (APEX_Z_MM * MM) / GRAVITY) * fps)
     APEX_FRAME = LAUNCH_FRAME + ascent_frames
     LANDING_FRAME = APEX_FRAME + descent_frames
     STAND_FRAME = LANDING_FRAME + 40  # matches the original 205->245 spacing
 
     # LAUNCH_FRAME-APEX_FRAME: ascent -- legs relax back to exactly the
-    # rest angle (the only pose used while off the ground) while rising the
-    # remaining (JUMP_APEX_MM - launch_z_mm) to JUMP_APEX_MM. Frame count
-    # is physics-derived from that real remaining height (see docstring);
+    # rest angle (the only pose used while off the ground) while coasting
+    # up on pure liftoff momentum (v0, measured above) to APEX_Z_MM. Frame
+    # count and height are both derived from that same real v0 -- not
+    # independent inputs -- so there's no discontinuity at LAUNCH_FRAME;
     # the decelerating shape itself is set on LAUNCH_FRAME above (the
     # keyframe governing this segment), not here.
     kf_leg_angle(legs, APEX_FRAME, DEFAULT_HIP_ANGLE)
     # APEX_FRAME's own easing governs the NEXT segment (APEX_FRAME->
     # LANDING_FRAME, the descent) -- EASE_IN/QUAD for an accelerating fall,
     # matching real gravity, set here rather than on LANDING_FRAME.
-    kf_loc(base_plate, APEX_FRAME, (0.0, 0.0, JUMP_APEX_MM), easing='EASE_IN', interp='QUAD')
+    kf_loc(base_plate, APEX_FRAME, (0.0, 0.0, APEX_Z_MM), easing='EASE_IN', interp='QUAD')
     kf_rot_x(base_plate, APEX_FRAME, -1.0)
 
-    # APEX_FRAME-LANDING_FRAME: descent -- free-fall the full JUMP_APEX_MM
+    # APEX_FRAME-LANDING_FRAME: descent -- free-fall the full APEX_Z_MM
     # back down to floor level (base_plate.z=0), accelerating in (QUAD/
     # EASE_IN, matching gravity) rather than BEZIER's symmetric ease.
     # Touchdown compression absorbs the impact and the wheel-spin pulse
