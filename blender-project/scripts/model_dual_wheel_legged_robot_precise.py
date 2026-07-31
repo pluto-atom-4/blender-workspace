@@ -510,14 +510,29 @@ def build_balance_and_jump(base_plate, legs):
     The airborne arc's ascent/descent frame counts are derived from real
     projectile motion under constant gravity (t = sqrt(2*h/g)) rather than
     hand-picked -- but ascent and descent are NOT forced symmetric, because
-    they are not the same height: the leg stays planted through the whole
+    they are not the same height. The leg stays planted through the whole
     162-LAUNCH_FRAME snap (lock_wheels_to_floor now covers that window
-    too), so the foot pushes the body up to launch_z -- a fully-extended-
-    leg height, well above 0 -- before actually leaving the ground.
-    Ascent only has to cover (JUMP_APEX_MM - launch_z); descent free-falls
-    the full JUMP_APEX_MM back down to true floor level, since the landing
-    pose (DEFAULT_HIP_ANGLE, a shorter reach than the 128deg launch pose)
-    touches down at base_plate.z=0. An earlier version measured ascent
+    too), so launch_z (measured off the actual LAUNCH_FRAME leg pose, not
+    assumed) is the real base_plate.z the moment the foot leaves the
+    ground. For THIS rig's specific link geometry that number comes out
+    NEGATIVE (~-36mm at JUMP_APEX_MM=300 -- the parallelogram's cosine
+    relationship means the chassis actually dips lower as the hip angle
+    swings past the rest pose toward full extension, not pre-lifted), so
+    ascent_mm = JUMP_APEX_MM - launch_z ends up LARGER than JUMP_APEX_MM
+    itself, not "the remaining height" -- the body has to climb back up
+    through its own launch dip before it even reaches the floor-level
+    reference, then continue to the apex. Whatever sign launch_z takes,
+    this stays correct: it is always the literal height gained between
+    LAUNCH_FRAME and APEX_FRAME. Descent is a separate, simpler free-fall
+    of the full JUMP_APEX_MM back down to the floor-level reference
+    (base_plate.z=0) -- landing keyframes CROUCH_ANGLE, not
+    DEFAULT_HIP_ANGLE (touchdown is meant to look like an impact-absorbing
+    crouch, not a stiff-legged landing), so lock_wheels_to_floor's second
+    range (which starts at LANDING_FRAME) nudges the actual contact height
+    a few mm off exactly 0 to match that pose; descent_frames uses the
+    z=0 reference purely for timing and is a close approximation, not
+    exact, but lock_wheels_to_floor still guarantees zero clipping at
+    LANDING_FRAME itself regardless. An earlier version measured ascent
     from an assumed z=0 launch point while the leg was actually already
     partway extended at LAUNCH_FRAME (base_plate.z=30mm, hand-picked, not
     derived) -- silently ~30mm short of the real launch height (issue #23
@@ -544,13 +559,17 @@ def build_balance_and_jump(base_plate, legs):
                wheel drive motors forward slightly to lock down the
                horizontal balance plane" per the takeoff-physics brief.
       LAUNCH_FRAME-APEX_FRAME  Ascent: legs relax back to exactly
-               DEFAULT_HIP_ANGLE (58) while rising the remaining
-               (JUMP_APEX_MM - launch_z) to JUMP_APEX_MM under gravity.
-      APEX_FRAME-LANDING_FRAME  Descent: free-fall the full JUMP_APEX_MM
-               back down to floor level (base_plate.z=0), where the
-               shorter landing pose touches down.
-      LANDING_FRAME  Landing: touchdown compression absorbs the impact,
-               wheel-spin pulse relaxes back to zero.
+               DEFAULT_HIP_ANGLE (58) while climbing (JUMP_APEX_MM -
+               launch_z) -- the real height gained from wherever launch_z
+               actually is, sign and all -- to JUMP_APEX_MM under gravity.
+      APEX_FRAME-LANDING_FRAME  Descent: free-fall (approximately)
+               JUMP_APEX_MM back down to the floor-level reference, where
+               the impact-absorb crouch (CROUCH_ANGLE) touches down --
+               lock_wheels_to_floor corrects the exact contact height.
+      LANDING_FRAME  Landing: touchdown compression absorbs the impact
+               (legs fold to CROUCH_ANGLE, not DEFAULT_HIP_ANGLE -- this
+               is meant to look like a cushioning crouch), wheel-spin
+               pulse relaxes back to zero.
       LANDING_FRAME-STAND_FRAME-10  Balancing: same +/-1.5deg pitch
                oscillation as 98-140, feet flat on the floor again.
       STAND_FRAME-10-STAND_FRAME  Stable stand: settle to exactly 58deg /
@@ -636,9 +655,14 @@ def build_balance_and_jump(base_plate, legs):
     launch_offset = min((legs['R']['wheel'].matrix_world @ Vector(c)).z
                          for c in legs['R']['wheel'].bound_box)
     launch_z_mm = (floor_z - launch_offset) / MM
+    # launch_z_mm can legitimately be negative for this rig's link geometry
+    # (see docstring) -- ascent_mm is the real height gained regardless of
+    # launch_z_mm's sign, and this assert guards the one case that's
+    # actually invalid: JUMP_APEX_MM set at or below wherever the body
+    # ends up at launch, leaving no ascent to animate at all.
     ascent_mm = JUMP_APEX_MM - launch_z_mm
     assert ascent_mm > 0, (
-        f"JUMP_APEX_MM ({JUMP_APEX_MM}mm) must clear the planted-foot launch "
+        f"JUMP_APEX_MM ({JUMP_APEX_MM}mm) must be above the actual launch "
         f"height ({launch_z_mm:.1f}mm) or there's no ascent left to animate"
     )
     ascent_frames = round(math.sqrt(2.0 * (ascent_mm * MM) / GRAVITY) * fps)

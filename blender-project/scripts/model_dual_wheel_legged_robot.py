@@ -318,10 +318,15 @@ def build_balance_and_jump(chassis, legs):
     kf_joints(legs, 161, 0.0, 0.0)
     kf_joints(legs, 180, -30.0, 55.0, easing='EASE_IN')
 
-    # 181-195: explosive extension (jump off ground)
-    kf_loc(chassis, 187, (0.0, 0.0, 60.0), easing='EASE_OUT')
+    # 181-195: explosive extension -- foot stays planted while the leg
+    # unfolds (load-and-explode spring, same fix as the _precise sibling's
+    # LAUNCH_FRAME window), so z=0.0 here is a placeholder: lock_wheels_to_
+    # floor's range now covers through 195, overwriting these with the
+    # FK-derived height that keeps the wheel on the floor while hip/knee
+    # extend. The body only actually leaves the ground after 195.
+    kf_loc(chassis, 187, (0.0, 0.0, 0.0), easing='EASE_OUT')
     kf_rot_x(chassis, 187, 2.0)
-    kf_loc(chassis, 195, (0.0, 0.0, 180.0), easing='EASE_OUT')
+    kf_loc(chassis, 195, (0.0, 0.0, 0.0), easing='EASE_OUT')
     kf_rot_x(chassis, 195, 0.0)
     kf_joints(legs, 183, 8.0, -12.0, easing='EASE_OUT')
     kf_joints(legs, 195, -22.0, 48.0)
@@ -346,12 +351,13 @@ def build_balance_and_jump(chassis, legs):
     kf_joints(legs, 238, 0.0, 0.0)
     kf_joints(legs, 250, 0.0, 0.0)
 
-    # Range 1 extends one frame past the crouch-bottom anchor (180) to 181:
-    # the joint-angle path toward the 183 explosive-extension keyframe dips
-    # the wheel slightly before chassis.z's own rise (keyframed at 187)
-    # catches up, so 181 needs the same correction as the rest of the
-    # grounded stance even though liftoff is already underway by 183.
-    lock_wheels_to_floor(chassis, legs, floor_z, [(121, 181), (220, 250)])
+    # Range 1 extends through 195 (full leg extension, end of the
+    # explosive-extension window), not just to 181 -- extending only one
+    # frame past crouch-bottom left the 182-195 span uncorrected, and the
+    # foot floated up to 45mm off the floor by frame 186 while the leg was
+    # still extending (issue #23 code review) instead of pushing off a
+    # planted foot. The body only leaves the ground after 195.
+    lock_wheels_to_floor(chassis, legs, floor_z, [(121, 195), (220, 250)])
 
 
 # ---------------------------------------------------------------------------
