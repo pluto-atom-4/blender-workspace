@@ -604,8 +604,12 @@ def kf_wheel_pitch(legs, frame, deg, easing='EASE_IN_OUT'):
 
 
 def build_balance_and_jump(base_plate, legs):
-    """91-140 balance, 141-160 crouch, 161-175 explosive jump,
-    176-210 airborne/landing/resume-balance."""
+    """91-140 balance. 141-162 rest/prep. Jump phase per explicit frame
+    markers: 162 rest, 163 smooth crouch (held through launch+flight), 205
+    fast straighten (leg reaches for the ground just before touchdown), 208
+    smooth absorb, 211 smooth settle. The parabolic Z arc (liftoff/apex/fall)
+    isn't separately named in that spec but has to exist for this to read as
+    a jump at all, so it's threaded through the same 163-205 hold window."""
 
     # 91-140: IMU balance -- chassis AND wheel micro pitch oscillation,
     # legs stay at neutral extension.
@@ -617,42 +621,38 @@ def build_balance_and_jump(base_plate, legs):
     kf_leg_angle(legs, 91, DEFAULT_HIP_ANGLE)
     kf_leg_angle(legs, 140, DEFAULT_HIP_ANGLE)
 
-    # 141-160: crouch -- smooth, gradual compression (EASE_IN_OUT throughout,
-    # not a sharp EASE_IN) so the 4-bar settles into the bottom of the crouch
-    # rather than snapping into it.
-    kf_rot_x(base_plate, 141, 0.0)
-    kf_leg_angle(legs, 141, DEFAULT_HIP_ANGLE)
-    kf_rot_x(base_plate, 160, 0.0)
-    kf_leg_angle(legs, 160, DEFAULT_HIP_ANGLE - 45.0, easing='EASE_IN_OUT')
-    kf_loc(base_plate, 141, (0.0, 0.0, 0.0))
-    kf_loc(base_plate, 160, (0.0, 0.0, -22.0), easing='EASE_IN_OUT')
+    # 162: rest (holds from 140 through here, same value -> no motion needed).
+    kf_rot_x(base_plate, 162, 0.0)
+    kf_leg_angle(legs, 162, DEFAULT_HIP_ANGLE)
+    kf_loc(base_plate, 162, (0.0, 0.0, 0.0))
 
-    # 161-175: explosive jump. The straighten-out itself is FAST -- packed
-    # into frames 160-165 (5 frames) with EASE_OUT so it snaps hard off the
-    # crouch -- then the leg settles smoothly through the rest of the window
-    # as the model leaves the ground, rather than snapping a second time.
-    kf_leg_angle(legs, 165, DEFAULT_HIP_ANGLE + 75.0, easing='EASE_OUT')  # rapid straighten
-    kf_loc(base_plate, 165, (0.0, 0.0, 30.0), easing='EASE_OUT')
-    kf_leg_angle(legs, 175, DEFAULT_HIP_ANGLE + 10.0, easing='EASE_IN_OUT')
-    kf_loc(base_plate, 175, (0.0, 0.0, 80.0), easing='EASE_OUT')
+    # 163: smooth crouch -- compresses, then HOLDS at this value all the way
+    # to frame 198 (just below), covering the (unlabeled but necessary)
+    # launch and airborne arc while the leg itself stays crouched.
+    kf_leg_angle(legs, 163, DEFAULT_HIP_ANGLE - 45.0, easing='EASE_IN_OUT')
+    kf_loc(base_plate, 163, (0.0, 0.0, -22.0), easing='EASE_IN_OUT')
 
-    # 176-210: peak -> fall -> touchdown compress -> resume balance, all
-    # smooth (EASE_IN_OUT) -- no sharp snaps after the takeoff itself.
-    kf_loc(base_plate, 190, (0.0, 0.0, 95.0), easing='EASE_IN_OUT')  # apex
-    kf_rot_x(base_plate, 190, -1.0)
-    kf_leg_angle(legs, 190, DEFAULT_HIP_ANGLE + 25.0, easing='EASE_IN_OUT')
+    kf_loc(base_plate, 172, (0.0, 0.0, 35.0), easing='EASE_OUT')  # liftoff
+    kf_loc(base_plate, 185, (0.0, 0.0, 100.0), easing='EASE_IN_OUT')  # apex
+    kf_rot_x(base_plate, 185, -1.0)
+    kf_leg_angle(legs, 198, DEFAULT_HIP_ANGLE - 45.0)  # still crouched, holding through the arc
+    kf_loc(base_plate, 198, (0.0, 0.0, 15.0), easing='EASE_IN')  # falling
 
-    kf_loc(base_plate, 200, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
-    kf_rot_x(base_plate, 200, 0.0)
-    kf_leg_angle(legs, 200, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')  # relax toward rest for landing
+    # 205: fast straighten -- packed into the 7 frames since 198, EASE_OUT so
+    # it snaps hard, reaching the leg out to meet the ground at touchdown.
+    kf_leg_angle(legs, 205, DEFAULT_HIP_ANGLE + 70.0, easing='EASE_OUT')
+    kf_loc(base_plate, 205, (0.0, 0.0, 0.0), easing='EASE_IN')
+    kf_rot_x(base_plate, 205, 0.0)
 
-    kf_loc(base_plate, 205, (0.0, 0.0, -18.0), easing='EASE_IN_OUT')  # impact absorb
-    kf_leg_angle(legs, 205, DEFAULT_HIP_ANGLE - 35.0, easing='EASE_IN_OUT')
+    # 208: smooth absorb.
+    kf_leg_angle(legs, 208, DEFAULT_HIP_ANGLE - 35.0, easing='EASE_IN_OUT')
+    kf_loc(base_plate, 208, (0.0, 0.0, -18.0), easing='EASE_IN_OUT')
 
-    kf_loc(base_plate, 210, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
-    kf_rot_x(base_plate, 210, 0.0)
-    kf_leg_angle(legs, 210, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
-    kf_wheel_pitch(legs, 210, 0.0)
+    # 211: smooth settle -- back to rest.
+    kf_leg_angle(legs, 211, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
+    kf_loc(base_plate, 211, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
+    kf_rot_x(base_plate, 211, 0.0)
+    kf_wheel_pitch(legs, 211, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -699,7 +699,7 @@ def main():
 
     scene = bpy.context.scene
     scene.frame_start = 1
-    scene.frame_end = 210
+    scene.frame_end = 211
     scene.frame_set(1)
 
     print("Dual-Wheel Legged Balancing Robot (precise) build complete.")
