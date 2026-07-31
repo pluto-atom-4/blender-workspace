@@ -286,7 +286,7 @@ def build_balance_and_jump(chassis, legs):
     touchdown. Leg "compression" is driven by keyframing hip/knee joint
     angles directly (see build_leg's FK-chain note) rather than an IK target.
 
-    Grounded ranges (121-180, 220-250) end with lock_wheels_to_floor's
+    Grounded ranges (121-195, 220-250) end with lock_wheels_to_floor's
     dense per-frame correction, same fix ported from the _precise sibling
     (issue #23) -- this 2-DOF hip+knee leg has no auto-leveling trick, so
     chassis pitch/z and joint angle changes move the wheel a lot more than

@@ -427,7 +427,7 @@ def build_exploded_view(base_plate, standoffs, deck, battery, atom, rear_ext, le
         animate_assembly(leg['wheel'], mm_inv(leg['wheel'].location), (sign * 35.0, 0.0, 0.0), seat_frame=85)
 
 
-def kf_leg_angle(legs, frame, angle_deg, easing='EASE_IN_OUT'):
+def kf_leg_angle(legs, frame, angle_deg, easing='EASE_IN_OUT', interp='BEZIER'):
     """Drive the forked upper plates (rigid doubled pair) to the hip angle,
     and counter-rotate the knee knuckle by the same amount so the lower
     plate/ankle/wheel subtree it carries never accumulates net rotation --
@@ -436,12 +436,20 @@ def kf_leg_angle(legs, frame, angle_deg, easing='EASE_IN_OUT'):
     drives hip_servo to the same angle -- its rotation_euler.x IS the joint
     axis (see build_servo's docstring), so without this the servo body and
     its horn bracket would stay frozen at the static build pose while the
-    plates it's bolted to sweep away from it."""
+    plates it's bolted to sweep away from it.
+
+    interp defaults to BEZIER, matching every other kf_* helper -- but note
+    Blender's `easing` enum is only honored for non-BEZIER interpolation
+    modes (QUAD/CUBIC/EXPO/etc); under BEZIER it's silently ignored and the
+    curve shape comes entirely from the (default AUTO_CLAMPED) handles
+    instead, regardless of what `easing` says (issue #23 code review,
+    confirmed empirically). Pass a real interp mode when the `easing` value
+    needs to actually do something, e.g. the explosive launch snap."""
     for leg in legs.values():
-        kf_rot_x(leg['hip_servo'], frame, angle_deg, easing=easing)
-        kf_rot_x(leg['upper_plate_front'], frame, angle_deg, easing=easing)
-        kf_rot_x(leg['upper_plate_back'], frame, angle_deg, easing=easing)
-        kf_rot_x(leg['knee_knuckle'], frame, -angle_deg, easing=easing)
+        kf_rot_x(leg['hip_servo'], frame, angle_deg, easing=easing, interp=interp)
+        kf_rot_x(leg['upper_plate_front'], frame, angle_deg, easing=easing, interp=interp)
+        kf_rot_x(leg['upper_plate_back'], frame, angle_deg, easing=easing, interp=interp)
+        kf_rot_x(leg['knee_knuckle'], frame, -angle_deg, easing=easing, interp=interp)
 
 
 def kf_wheel_pitch(legs, frame, deg, easing='EASE_IN_OUT'):
@@ -449,7 +457,7 @@ def kf_wheel_pitch(legs, frame, deg, easing='EASE_IN_OUT'):
         kf_rot_x(leg['wheel_servo'], frame, deg, easing=easing)
 
 
-def kf_wheel_spin(legs, frame, spin_deg, easing='EASE_IN_OUT'):
+def kf_wheel_spin(legs, frame, spin_deg, easing='EASE_IN_OUT', interp='BEZIER'):
     """Rolls each wheel forward by spin_deg around its own axle -- the
     "pulse the wheel drive motors forward slightly to lock down the
     horizontal balance plane" cue from the explosive-takeoff physics brief
@@ -481,7 +489,7 @@ def kf_wheel_spin(legs, frame, spin_deg, easing='EASE_IN_OUT'):
             for fc in wheel.animation_data.action.fcurves:
                 if fc.data_path == "rotation_euler":
                     kp = fc.keyframe_points[-1]
-                    kp.interpolation = 'BEZIER'
+                    kp.interpolation = interp
                     kp.easing = easing
 
 
@@ -624,25 +632,45 @@ def build_balance_and_jump(base_plate, legs):
     # placeholder -- lock_wheels_to_floor overwrites it (and every frame in
     # between) with the FK-derived height needed to keep the wheel bottomed
     # out on the floor instead of sinking through it.
+    # Every easing= below only does something if interp= is a real curve
+    # type: Blender ignores the `easing` enum entirely under BEZIER (the
+    # default used everywhere else in this file) -- confirmed empirically
+    # (issue #23 code review), so the "load" and "explode" phases pass
+    # interp='QUAD'/'EXPO' explicitly to actually get the intended shape
+    # instead of BEZIER's smooth-both-ends AUTO_CLAMPED curve regardless
+    # of what easing says. Also confirmed empirically: a keyframe's own
+    # interpolation/easing governs the segment LEAVING it (toward the next
+    # keyframe), not the segment arriving at it -- so the "load" shape has
+    # to be set on frame 141 (the segment 141->CROUCH_END), the "explode"
+    # shape on CROUCH_END (the segment CROUCH_END->LAUNCH_FRAME), etc.
     CROUCH_ANGLE = DEFAULT_HIP_ANGLE - 20.0  # 58 -> 38, a 34% reduction
     kf_rot_x(base_plate, 141, 0.0)
-    kf_leg_angle(legs, 141, DEFAULT_HIP_ANGLE)
-    kf_loc(base_plate, 141, (0.0, 0.0, 0.0))
+    # Load: starts slow, accelerates down into full compression over
+    # 141->CROUCH_END -- reads as the spring winding up under building
+    # force, not a lazy drift down.
+    kf_leg_angle(legs, 141, DEFAULT_HIP_ANGLE, easing='EASE_IN', interp='QUAD')
+    kf_loc(base_plate, 141, (0.0, 0.0, 0.0), easing='EASE_IN', interp='QUAD')
     kf_rot_x(base_plate, CROUCH_END, 0.0)
-    kf_leg_angle(legs, CROUCH_END, CROUCH_ANGLE, easing='EASE_IN_OUT')
-    kf_loc(base_plate, CROUCH_END, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
     kf_wheel_spin(legs, CROUCH_END, 0.0)
 
     # CROUCH_END-LAUNCH_FRAME: explosive jump -- legs stretch outward past
-    # the rest angle in a hard EASE_OUT snap. z=0.0 is a placeholder --
+    # the rest angle in a genuinely explosive EXPO/EASE_OUT snap (set on
+    # CROUCH_END, which governs this outgoing segment -- near-all the
+    # motion front-loaded into the first frame or two, tapering off, not
+    # BEZIER's symmetric bell curve). z=0.0 is a placeholder --
     # lock_wheels_to_floor's range now extends through LAUNCH_FRAME, so the
     # foot stays planted while the leg pushes the body up (load-and-explode
     # spring), instead of the body sitting still while the foot floats free.
     # Wheel-drive forward pulse fires over the same window (takeoff-physics
     # brief point 2: lock down the horizontal balance plane during launch).
-    kf_leg_angle(legs, LAUNCH_FRAME, DEFAULT_HIP_ANGLE + 70.0, easing='EASE_OUT')
-    kf_loc(base_plate, LAUNCH_FRAME, (0.0, 0.0, 0.0), easing='EASE_OUT')
-    kf_wheel_spin(legs, LAUNCH_FRAME, 18.0, easing='EASE_OUT')
+    kf_leg_angle(legs, CROUCH_END, CROUCH_ANGLE, easing='EASE_OUT', interp='EXPO')
+    kf_loc(base_plate, CROUCH_END, (0.0, 0.0, 0.0), easing='EASE_OUT', interp='EXPO')
+    # LAUNCH_FRAME's own easing governs the NEXT segment (168->APEX_FRAME,
+    # the ascent) -- EASE_OUT/QUAD for a physically-plausible decelerating
+    # rise, set here rather than on APEX_FRAME.
+    kf_leg_angle(legs, LAUNCH_FRAME, DEFAULT_HIP_ANGLE + 70.0, easing='EASE_OUT', interp='QUAD')
+    kf_loc(base_plate, LAUNCH_FRAME, (0.0, 0.0, 0.0), easing='EASE_OUT', interp='QUAD')
+    kf_wheel_spin(legs, LAUNCH_FRAME, 18.0)
 
     # Real launch height: wheel-bottom offset with the leg fully extended
     # (LAUNCH_FRAME's angle, just keyframed above) and base_plate.z=0 --
@@ -674,15 +702,22 @@ def build_balance_and_jump(base_plate, legs):
     # LAUNCH_FRAME-APEX_FRAME: ascent -- legs relax back to exactly the
     # rest angle (the only pose used while off the ground) while rising the
     # remaining (JUMP_APEX_MM - launch_z_mm) to JUMP_APEX_MM. Frame count
-    # is physics-derived from that real remaining height (see docstring).
-    kf_leg_angle(legs, APEX_FRAME, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
-    kf_loc(base_plate, APEX_FRAME, (0.0, 0.0, JUMP_APEX_MM), easing='EASE_OUT')
+    # is physics-derived from that real remaining height (see docstring);
+    # the decelerating shape itself is set on LAUNCH_FRAME above (the
+    # keyframe governing this segment), not here.
+    kf_leg_angle(legs, APEX_FRAME, DEFAULT_HIP_ANGLE)
+    # APEX_FRAME's own easing governs the NEXT segment (APEX_FRAME->
+    # LANDING_FRAME, the descent) -- EASE_IN/QUAD for an accelerating fall,
+    # matching real gravity, set here rather than on LANDING_FRAME.
+    kf_loc(base_plate, APEX_FRAME, (0.0, 0.0, JUMP_APEX_MM), easing='EASE_IN', interp='QUAD')
     kf_rot_x(base_plate, APEX_FRAME, -1.0)
 
     # APEX_FRAME-LANDING_FRAME: descent -- free-fall the full JUMP_APEX_MM
-    # back down to floor level (base_plate.z=0), touchdown compression
-    # absorbs the impact and the wheel-spin pulse relaxes back to zero.
-    kf_loc(base_plate, LANDING_FRAME, (0.0, 0.0, 0.0), easing='EASE_IN')
+    # back down to floor level (base_plate.z=0), accelerating in (QUAD/
+    # EASE_IN, matching gravity) rather than BEZIER's symmetric ease.
+    # Touchdown compression absorbs the impact and the wheel-spin pulse
+    # relaxes back to zero.
+    kf_loc(base_plate, LANDING_FRAME, (0.0, 0.0, 0.0), easing='EASE_IN', interp='QUAD')
     kf_rot_x(base_plate, LANDING_FRAME, 0.0)
     kf_leg_angle(legs, LANDING_FRAME, CROUCH_ANGLE, easing='EASE_IN_OUT')
     kf_wheel_spin(legs, LANDING_FRAME, 0.0, easing='EASE_IN')
