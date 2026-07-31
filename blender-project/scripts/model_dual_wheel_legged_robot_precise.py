@@ -617,41 +617,41 @@ def build_balance_and_jump(base_plate, legs):
     kf_leg_angle(legs, 91, DEFAULT_HIP_ANGLE)
     kf_leg_angle(legs, 140, DEFAULT_HIP_ANGLE)
 
-    # 141-160: crouch -- 4-bar compresses tightly, chassis stays flat.
-    # All targets below are DEFAULT_HIP_ANGLE plus the same deltas this
-    # animation used when it was authored around a straight (0deg) rest
-    # pose, so the crouch/jump/landing motion keeps its original amplitude.
+    # 141-160: crouch -- smooth, gradual compression (EASE_IN_OUT throughout,
+    # not a sharp EASE_IN) so the 4-bar settles into the bottom of the crouch
+    # rather than snapping into it.
     kf_rot_x(base_plate, 141, 0.0)
     kf_leg_angle(legs, 141, DEFAULT_HIP_ANGLE)
     kf_rot_x(base_plate, 160, 0.0)
-    kf_leg_angle(legs, 160, DEFAULT_HIP_ANGLE - 35.0, easing='EASE_IN')
+    kf_leg_angle(legs, 160, DEFAULT_HIP_ANGLE - 45.0, easing='EASE_IN_OUT')
     kf_loc(base_plate, 141, (0.0, 0.0, 0.0))
-    kf_loc(base_plate, 160, (0.0, 0.0, -22.0), easing='EASE_IN')
+    kf_loc(base_plate, 160, (0.0, 0.0, -22.0), easing='EASE_IN_OUT')
 
-    # 161-175: explosive jump -- linkages snap outward (rapid extension past
-    # the narrow default) then backward (swinging past neutral the other
-    # way) in one continuous rapid motion, driving the model up the
-    # parabolic Z path below.
-    kf_leg_angle(legs, 168, DEFAULT_HIP_ANGLE + 50.0, easing='EASE_OUT')  # snap outward
-    kf_loc(base_plate, 168, (0.0, 0.0, 25.0), easing='EASE_OUT')
-    kf_leg_angle(legs, 175, DEFAULT_HIP_ANGLE - 40.0, easing='EASE_OUT')  # snap backward
+    # 161-175: explosive jump. The straighten-out itself is FAST -- packed
+    # into frames 160-165 (5 frames) with EASE_OUT so it snaps hard off the
+    # crouch -- then the leg settles smoothly through the rest of the window
+    # as the model leaves the ground, rather than snapping a second time.
+    kf_leg_angle(legs, 165, DEFAULT_HIP_ANGLE + 75.0, easing='EASE_OUT')  # rapid straighten
+    kf_loc(base_plate, 165, (0.0, 0.0, 30.0), easing='EASE_OUT')
+    kf_leg_angle(legs, 175, DEFAULT_HIP_ANGLE + 10.0, easing='EASE_IN_OUT')
     kf_loc(base_plate, 175, (0.0, 0.0, 80.0), easing='EASE_OUT')
 
-    # 176-210: peak -> fall -> touchdown compress -> resume balance.
-    kf_loc(base_plate, 190, (0.0, 0.0, 95.0), easing='EASE_OUT')  # apex
+    # 176-210: peak -> fall -> touchdown compress -> resume balance, all
+    # smooth (EASE_IN_OUT) -- no sharp snaps after the takeoff itself.
+    kf_loc(base_plate, 190, (0.0, 0.0, 95.0), easing='EASE_IN_OUT')  # apex
     kf_rot_x(base_plate, 190, -1.0)
-    kf_leg_angle(legs, 190, DEFAULT_HIP_ANGLE - 20.0)
+    kf_leg_angle(legs, 190, DEFAULT_HIP_ANGLE + 25.0, easing='EASE_IN_OUT')
 
-    kf_loc(base_plate, 200, (0.0, 0.0, 0.0), easing='EASE_IN')
+    kf_loc(base_plate, 200, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
     kf_rot_x(base_plate, 200, 0.0)
-    kf_leg_angle(legs, 200, DEFAULT_HIP_ANGLE + 5.0, easing='EASE_IN')  # extend for landing
+    kf_leg_angle(legs, 200, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')  # relax toward rest for landing
 
-    kf_loc(base_plate, 205, (0.0, 0.0, -18.0), easing='EASE_IN')  # impact absorb
-    kf_leg_angle(legs, 205, DEFAULT_HIP_ANGLE - 30.0, easing='EASE_IN')
+    kf_loc(base_plate, 205, (0.0, 0.0, -18.0), easing='EASE_IN_OUT')  # impact absorb
+    kf_leg_angle(legs, 205, DEFAULT_HIP_ANGLE - 35.0, easing='EASE_IN_OUT')
 
-    kf_loc(base_plate, 210, (0.0, 0.0, 0.0))
+    kf_loc(base_plate, 210, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
     kf_rot_x(base_plate, 210, 0.0)
-    kf_leg_angle(legs, 210, DEFAULT_HIP_ANGLE)
+    kf_leg_angle(legs, 210, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
     kf_wheel_pitch(legs, 210, 0.0)
 
 
