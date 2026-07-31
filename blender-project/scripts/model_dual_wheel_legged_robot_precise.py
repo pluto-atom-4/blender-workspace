@@ -13,27 +13,27 @@ Sections:
   4. Component builders (chassis stack, servo, 4-bar link, ankle, wheel)
   5. Assembly: sandwich stack + parallelogram leg FK chain
   6. Animation: exploded assembly (1-90), settle/balance/crouch/jump/land/
-     balance/stand (90-245)
+     balance/stand (90-STAND_FRAME, physics-derived from JUMP_APEX_MM --
+     see build_balance_and_jump)
   7. Main
 """
 
+import sys
 import bpy
-import bmesh
 import math
 from mathutils import Vector, Matrix
+
+_SCRIPTS_DIR = "/home/pluto-atom-4/blender-workspace/blender-project/scripts"
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from _model_common import (  # noqa: E402
+    MM, mm, mm_inv, AXIS_ROT, make_box, make_cylinder, merge_cutters,
+    boolean_diff_apply, set_ease, animate_assembly, kf_loc, kf_loc_z, kf_rot_x,
+)
 
 # ---------------------------------------------------------------------------
 # 1. Units / cleanup / materials
 # ---------------------------------------------------------------------------
-
-MM = 0.001  # 1mm in Blender meters
-
-
-def mm(*vals):
-    if len(vals) == 1:
-        return vals[0] * MM
-    return tuple(v * MM for v in vals)
-
 
 COLLECTION_NAME = "DualWheelLeggedRobotPrecise"
 PREFIX = "DWLRP_"
@@ -90,146 +90,9 @@ def assign_material(obj, mat):
 
 
 # ---------------------------------------------------------------------------
-# 2. Mesh primitives with explicit pivot control (bmesh, real mm dims)
-# ---------------------------------------------------------------------------
-
-def _link(obj, collection):
-    collection.objects.link(obj)
-    return obj
-
-
-def apply_transforms(obj):
-    bpy.context.view_layer.objects.active = obj
-    for o in bpy.context.selected_objects:
-        o.select_set(False)
-    obj.select_set(True)
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    obj.select_set(False)
-
-
-def shade_flat(obj):
-    for poly in obj.data.polygons:
-        poly.use_smooth = False
-
-
-def make_box(name, collection, size_mm, pivot_mm=(0.0, 0.0, 0.0), location_mm=(0.0, 0.0, 0.0), material=None):
-    """Box of size_mm (x,y,z), local origin offset by pivot_mm from geometric center.
-    Scale is baked via bmesh construction directly, then transform_apply is
-    still called right after creation (location=False) so any future
-    rotation/scale edits on THIS object start from a clean identity basis --
-    satisfies the "apply transforms right after creating each plate" brief."""
-    sx, sy, sz = mm(*size_mm)
-    px, py, pz = mm(*pivot_mm)
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-    for v in bm.verts:
-        v.co.x = v.co.x * sx - px
-        v.co.y = v.co.y * sy - py
-        v.co.z = v.co.z * sz - pz
-    mesh = bpy.data.meshes.new(name + "_mesh")
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.update()
-    obj = bpy.data.objects.new(name, mesh)
-    _link(obj, collection)
-    obj.location = mm(*location_mm)
-    shade_flat(obj)
-    apply_transforms(obj)
-    if material is not None:
-        assign_material(obj, material)
-    return obj
-
-
-AXIS_ROT = {
-    'Z': None,
-    'X': Matrix.Rotation(math.radians(90), 3, 'Y'),
-    'Y': Matrix.Rotation(math.radians(90), 3, 'X'),
-}
-
-
-def make_cylinder(name, collection, radius_mm, depth_mm, axis='Z', segments=32,
-                   pivot_mm=(0.0, 0.0, 0.0), location_mm=(0.0, 0.0, 0.0), cap=True, material=None):
-    r = mm(radius_mm)
-    d = mm(depth_mm)
-    px, py, pz = mm(*pivot_mm)
-    bm = bmesh.new()
-    bmesh.ops.create_cone(bm, cap_ends=cap, cap_tris=False, segments=segments,
-                           radius1=r, radius2=r, depth=d)
-    rot = AXIS_ROT.get(axis)
-    if rot is not None:
-        bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=rot)
-    for v in bm.verts:
-        v.co.x -= px
-        v.co.y -= py
-        v.co.z -= pz
-    mesh = bpy.data.meshes.new(name + "_mesh")
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.update()
-    obj = bpy.data.objects.new(name, mesh)
-    _link(obj, collection)
-    obj.location = mm(*location_mm)
-    shade_flat(obj)
-    apply_transforms(obj)
-    if material is not None:
-        assign_material(obj, material)
-    return obj
-
-
-def merge_cutters(name, collection, cutter_specs):
-    """cutter_specs: list of dicts {type:'box'|'cyl', size/radius/depth/axis, location(local mm)}.
-    Builds ONE combined mesh so a single boolean modifier removes all of them."""
-    bm = bmesh.new()
-    for spec in cutter_specs:
-        sub = bmesh.new()
-        if spec['type'] == 'box':
-            sx, sy, sz = mm(*spec['size'])
-            bmesh.ops.create_cube(sub, size=1.0)
-            for v in sub.verts:
-                v.co.x *= sx
-                v.co.y *= sy
-                v.co.z *= sz
-        else:
-            r = mm(spec['radius'])
-            d = mm(spec['depth'])
-            bmesh.ops.create_cone(sub, cap_ends=True, cap_tris=False, segments=spec.get('segments', 24),
-                                   radius1=r, radius2=r, depth=d)
-            rot = AXIS_ROT.get(spec.get('axis', 'Z'))
-            if rot is not None:
-                bmesh.ops.rotate(sub, verts=sub.verts, cent=(0, 0, 0), matrix=rot)
-        lx, ly, lz = mm(*spec['location'])
-        for v in sub.verts:
-            v.co.x += lx
-            v.co.y += ly
-            v.co.z += lz
-        tmp_mesh = bpy.data.meshes.new("tmp_cutter")
-        sub.to_mesh(tmp_mesh)
-        sub.free()
-        bm.from_mesh(tmp_mesh)
-        bpy.data.meshes.remove(tmp_mesh)
-    mesh = bpy.data.meshes.new(name + "_mesh")
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.update()
-    obj = bpy.data.objects.new(name, mesh)
-    _link(obj, collection)
-    return obj
-
-
-def boolean_diff_apply(target, cutter_obj):
-    mod = target.modifiers.new(name="Cut", type='BOOLEAN')
-    mod.operation = 'DIFFERENCE'
-    mod.object = cutter_obj
-    mod.solver = 'EXACT'
-    bpy.context.view_layer.objects.active = target
-    bpy.ops.object.modifier_apply(modifier=mod.name)
-    mesh_data = cutter_obj.data
-    bpy.data.objects.remove(cutter_obj, do_unlink=True)
-    if mesh_data.users == 0:
-        bpy.data.meshes.remove(mesh_data)
-    shade_flat(target)
-
-
+# 2-3. Mesh primitives, boolean cutting -- shared with the non-_precise
+# sibling via _model_common (make_box/make_cylinder/merge_cutters/
+# boolean_diff_apply, imported above).
 # ---------------------------------------------------------------------------
 # 4. Component builders
 # ---------------------------------------------------------------------------
@@ -531,54 +394,9 @@ def build_leg(side, collection, base_plate):
 
 
 # ---------------------------------------------------------------------------
-# 6. Animation
+# 6. Animation -- set_ease/animate_assembly/mm_inv/kf_loc/kf_loc_z/kf_rot_x
+# are shared via _model_common (imported above).
 # ---------------------------------------------------------------------------
-
-def set_ease(obj, easing='EASE_IN_OUT'):
-    if obj.animation_data and obj.animation_data.action:
-        for fc in obj.animation_data.action.fcurves:
-            for kp in fc.keyframe_points:
-                kp.interpolation = 'BEZIER'
-                kp.easing = easing
-
-
-def animate_assembly(obj, assembled_loc_mm, explode_dir_mm, seat_frame=45, hold_frame=90):
-    """Frame 1: exploded. seat_frame: seated. Holds static through hold_frame."""
-    assembled = Vector(mm(*assembled_loc_mm))
-    exploded = assembled + Vector(mm(*explode_dir_mm))
-
-    obj.location = exploded
-    obj.keyframe_insert(data_path="location", frame=1)
-    obj.location = assembled
-    obj.keyframe_insert(data_path="location", frame=seat_frame)
-    obj.keyframe_insert(data_path="location", frame=hold_frame)
-    set_ease(obj, 'EASE_OUT')
-
-
-def mm_inv(vec):
-    return (vec.x / MM, vec.y / MM, vec.z / MM)
-
-
-def kf_loc(obj, frame, loc_mm, interp='BEZIER', easing='EASE_IN_OUT'):
-    obj.location = Vector(mm(*loc_mm))
-    obj.keyframe_insert(data_path="location", frame=frame)
-    if obj.animation_data and obj.animation_data.action:
-        for fc in obj.animation_data.action.fcurves:
-            if fc.data_path == "location":
-                kp = fc.keyframe_points[-1]
-                kp.interpolation = interp
-                kp.easing = easing
-
-
-def kf_rot_x(obj, frame, deg, interp='BEZIER', easing='EASE_IN_OUT'):
-    obj.rotation_euler.x = math.radians(deg)
-    obj.keyframe_insert(data_path="rotation_euler", index=0, frame=frame)
-    if obj.animation_data and obj.animation_data.action:
-        for fc in obj.animation_data.action.fcurves:
-            if fc.data_path == "rotation_euler" and fc.array_index == 0:
-                kp = fc.keyframe_points[-1]
-                kp.interpolation = interp
-                kp.easing = easing
 
 
 def build_exploded_view(base_plate, standoffs, deck, battery, atom, rear_ext, legs):
@@ -630,6 +448,42 @@ def kf_wheel_pitch(legs, frame, deg, easing='EASE_IN_OUT'):
         kf_rot_x(leg['wheel_servo'], frame, deg, easing=easing)
 
 
+def kf_wheel_spin(legs, frame, spin_deg, easing='EASE_IN_OUT'):
+    """Rolls each wheel forward by spin_deg around its own axle -- the
+    "pulse the wheel drive motors forward slightly to lock down the
+    horizontal balance plane" cue from the explosive-takeoff physics brief
+    (issue #23 follow-up), which had no implementation anywhere before this.
+
+    build_wheel() bakes a static (0, 90deg, 0) tip onto the wheel object so
+    its cylinder axis (originally local Z) ends up pointing along the
+    axle direction. A further "roll" has to spin around THAT (tipped)
+    axle, which does not correspond to incrementing any single
+    rotation_euler channel on top of the existing (0, 90, 0) -- Euler
+    channels compose in a fixed order, not around the object's current
+    axes. Composing spin BEFORE the tip instead sidesteps the ambiguity
+    entirely: spin(local Z) leaves the local Z axis itself fixed (points on
+    a rotation axis don't move), and the tip is a rigid transform applied
+    after, so "spin around original Z, then tip" is mathematically
+    identical to "spin around wherever the axle ends up," regardless of
+    Blender's Euler composition order. Both wheels share the same
+    (non-mirrored) tip, so identical spin_deg on both rolls them forward
+    together with no L/R sign flip needed.
+    """
+    tip = Matrix.Rotation(math.radians(90.0), 4, 'Y')
+    spin = Matrix.Rotation(math.radians(spin_deg), 4, 'Z')
+    euler = (tip @ spin).to_euler('XYZ')
+    for leg in legs.values():
+        wheel = leg['wheel']
+        wheel.rotation_euler = euler
+        wheel.keyframe_insert(data_path="rotation_euler", frame=frame)
+        if wheel.animation_data and wheel.animation_data.action:
+            for fc in wheel.animation_data.action.fcurves:
+                if fc.data_path == "rotation_euler":
+                    kp = fc.keyframe_points[-1]
+                    kp.interpolation = 'BEZIER'
+                    kp.easing = easing
+
+
 def balance_oscillation(base_plate, legs, frames, pitches):
     """IMU self-balance wobble: chassis pitch plus a 0.6x-coupled wheel
     counter-tilt, at the given (frame, degrees) pairs. Shared by both
@@ -640,46 +494,71 @@ def balance_oscillation(base_plate, legs, frames, pitches):
         kf_wheel_pitch(legs, f, p * 0.6)
 
 
+JUMP_APEX_MM = 300.0  # height off the floor at the arc's peak
+GRAVITY = 9.8  # m/s^2
+LAUNCH_FRAME = 168  # explosive snap lands here; wheel leaves the floor
+
+
 def build_balance_and_jump(base_plate, legs):
     """Rebuilt from scratch per the assemble->stand->jump spec (issue #23
     follow-up): every leg pose is DEFAULT_HIP_ANGLE=58deg plus or minus an
     explicit delta off it -- no other absolute angle is invented -- and the
     model's feet are on the floor (base_plate.z == 0) at both ends of the
-    clip, only leaving the ground for the single jump arc in the middle:
+    clip, only leaving the ground for the single jump arc in the middle.
 
-      90-98   Touchdown settle: assembly (1-90) already ends grounded at
-              z=0/58deg: a small absorb-and-recover dip sells the parts
-              having just landed together as one rigid body.
-      98-140  Balancing: +/-1.5deg pitch oscillation on chassis AND wheels
-              (IMU self-balancing) while feet stay flat on the floor, legs
-              held at the rest angle (58deg).
-      140-162 Crouch: hip angle compresses >=20% off 58deg (58->38, a 34%
-              reduction) as anticipation, chassis stays flat/level.
-      162-172 Explosive Jump: legs stretch outward past the rest angle
-              (58+70=128deg) in a fast EASE_OUT snap, launching the model
-              off the floor.
-      172-190 Airborne: legs relax back to exactly DEFAULT_HIP_ANGLE (58)
-              while the model rides the parabolic Z path to apex -- the
-              only pose used while airborne is the rest angle itself.
-      190-205 Landing: fall back to z=0, touchdown compression to absorb
-              the impact.
-      205-235 Balancing: same +/-1.5deg pitch oscillation as 98-140, feet
-              flat on the floor again.
-      235-245 Stable stand: settle to exactly 58deg / z=0 / level pitch
-              and hold -- final resting frame.
+    The airborne arc's ascent/descent frame counts are derived from
+    JUMP_APEX_MM under constant gravity (t_up = sqrt(2*h/g)) rather than
+    hand-picked, and kept symmetric -- a real projectile takes equally
+    long to rise and fall to/from a given apex; an earlier version used an
+    18-frame ascent vs a 24-25 frame descent for the same height, which
+    reads as floaty slow-motion rather than an explosive leap (issue #23
+    code review). Phase frames below are computed at each build, so
+    retuning JUMP_APEX_MM keeps the whole timeline physically consistent
+    instead of needing every downstream frame number hand-updated too:
+
+      90-98    Touchdown settle: assembly (1-90) already ends grounded at
+               z=0/58deg: a small absorb-and-recover dip sells the parts
+               having just landed together as one rigid body.
+      98-140   Balancing: +/-1.5deg pitch oscillation on chassis AND wheels
+               (IMU self-balancing) while feet stay flat on the floor, legs
+               held at the rest angle (58deg).
+      140-162  Crouch: hip angle compresses >=20% off 58deg (58->38, a 34%
+               reduction) as anticipation, chassis stays flat/level.
+      162-LAUNCH_FRAME  Explosive Jump: legs stretch outward past the rest
+               angle (58+70=128deg) in a fast EASE_OUT snap. A forward
+               wheel-spin pulse (kf_wheel_spin) fires over the same window
+               -- "pulse the wheel drive motors forward slightly to lock
+               down the horizontal balance plane" per the takeoff-physics
+               brief -- then the model leaves the floor at LAUNCH_FRAME.
+      LAUNCH_FRAME-APEX_FRAME  Ascent: legs relax back to exactly
+               DEFAULT_HIP_ANGLE (58) -- the only pose used while airborne
+               -- while rising to JUMP_APEX_MM.
+      APEX_FRAME-LANDING_FRAME  Descent: symmetric free-fall back to the
+               floor (same frame count as the ascent).
+      LANDING_FRAME  Landing: touchdown compression absorbs the impact,
+               wheel-spin pulse relaxes back to zero.
+      LANDING_FRAME-STAND_FRAME-10  Balancing: same +/-1.5deg pitch
+               oscillation as 98-140, feet flat on the floor again.
+      STAND_FRAME-10-STAND_FRAME  Stable stand: settle to exactly 58deg /
+               z=0 / level pitch and hold -- final resting frame.
 
     Ends with lock_wheels_to_floor's dense correction pass, which re-derives
     base_plate's required Z every frame in the grounded ranges instead of
     trusting hand-picked anchor values to interpolate correctly in between.
     """
+    fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
+    ascent_time_s = math.sqrt(2.0 * (JUMP_APEX_MM * MM) / GRAVITY)
+    ascent_frames = round(ascent_time_s * fps)
+    APEX_FRAME = LAUNCH_FRAME + ascent_frames
+    LANDING_FRAME = APEX_FRAME + ascent_frames  # symmetric descent
+
     # Boundary frames for the two grounded ranges lock_wheels_to_floor
     # corrects -- named once here and reused at every call site below (and
     # in the lock_wheels_to_floor call itself) so retiming a phase can't
     # silently desync the correction range from the anchors it covers.
     SETTLE_START = 90
     CROUCH_END = 162
-    LANDING_FRAME = 205
-    STAND_FRAME = 245
+    STAND_FRAME = LANDING_FRAME + 40  # matches the original 205->245 spacing
 
     scene = bpy.context.scene
     # Reference "floor" height: wheel-bottom world Z at the rig's static
@@ -724,44 +603,48 @@ def build_balance_and_jump(base_plate, legs):
     kf_rot_x(base_plate, CROUCH_END, 0.0)
     kf_leg_angle(legs, CROUCH_END, CROUCH_ANGLE, easing='EASE_IN_OUT')
     kf_loc(base_plate, CROUCH_END, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
+    kf_wheel_spin(legs, CROUCH_END, 0.0)
 
-    # CROUCH_END-172: explosive jump -- legs stretch outward past the rest
-    # angle in a hard EASE_OUT snap, model leaves the floor on a parabolic
-    # Z path.
-    kf_leg_angle(legs, 168, DEFAULT_HIP_ANGLE + 70.0, easing='EASE_OUT')
-    kf_loc(base_plate, 168, (0.0, 0.0, 30.0), easing='EASE_OUT')
+    # CROUCH_END-LAUNCH_FRAME: explosive jump -- legs stretch outward past
+    # the rest angle in a hard EASE_OUT snap, model leaves the floor.
+    # Wheel-drive forward pulse fires over the same window (takeoff-physics
+    # brief point 2: lock down the horizontal balance plane during launch).
+    kf_leg_angle(legs, LAUNCH_FRAME, DEFAULT_HIP_ANGLE + 70.0, easing='EASE_OUT')
+    kf_loc(base_plate, LAUNCH_FRAME, (0.0, 0.0, 30.0), easing='EASE_OUT')
+    kf_wheel_spin(legs, LAUNCH_FRAME, 18.0, easing='EASE_OUT')
 
-    # 172-190: airborne -- legs relax back to exactly the rest angle (the
-    # only pose used while off the ground) while rising to apex.
-    kf_leg_angle(legs, 180, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
-    kf_loc(base_plate, 180, (0.0, 0.0, 95.0), easing='EASE_OUT')  # apex
-    kf_rot_x(base_plate, 180, -1.0)
+    # LAUNCH_FRAME-APEX_FRAME: ascent -- legs relax back to exactly the
+    # rest angle (the only pose used while off the ground) while rising to
+    # JUMP_APEX_MM. Frame count is physics-derived (see docstring), not
+    # hand-picked.
+    kf_leg_angle(legs, APEX_FRAME, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
+    kf_loc(base_plate, APEX_FRAME, (0.0, 0.0, JUMP_APEX_MM), easing='EASE_OUT')
+    kf_rot_x(base_plate, APEX_FRAME, -1.0)
 
-    # 190-LANDING_FRAME: landing -- fall back to the floor, touchdown
-    # compression absorbs the impact.
-    kf_loc(base_plate, 190, (0.0, 0.0, 20.0), easing='EASE_IN')
-    kf_rot_x(base_plate, 190, 0.0)
-    kf_leg_angle(legs, 190, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
-
-    # impact absorb -- legs fold back to CROUCH_ANGLE on touchdown. z=0.0
-    # is a placeholder, overwritten by lock_wheels_to_floor (LANDING_FRAME-
-    # STAND_FRAME range) same as the crouch above.
-    kf_loc(base_plate, LANDING_FRAME, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
+    # APEX_FRAME-LANDING_FRAME: descent -- symmetric free-fall back to the
+    # floor (same frame count as the ascent above), touchdown compression
+    # absorbs the impact and the wheel-spin pulse relaxes back to zero.
+    kf_loc(base_plate, LANDING_FRAME, (0.0, 0.0, 0.0), easing='EASE_IN')
+    kf_rot_x(base_plate, LANDING_FRAME, 0.0)
     kf_leg_angle(legs, LANDING_FRAME, CROUCH_ANGLE, easing='EASE_IN_OUT')
+    kf_wheel_spin(legs, LANDING_FRAME, 0.0, easing='EASE_IN')
 
-    # LANDING_FRAME-235: balance again, feet flat on the floor.
-    kf_loc(base_plate, 210, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
-    kf_leg_angle(legs, 210, DEFAULT_HIP_ANGLE)
-    balance_oscillation(base_plate, legs, [210, 218, 226, 231, 235], [0.0, 1.3, -1.2, 0.8, 0.0])
-    kf_leg_angle(legs, 235, DEFAULT_HIP_ANGLE)
+    # LANDING_FRAME-STAND_FRAME-10: balance again, feet flat on the floor.
+    balance2_start = LANDING_FRAME + 5
+    kf_loc(base_plate, balance2_start, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
+    kf_leg_angle(legs, balance2_start, DEFAULT_HIP_ANGLE)
+    balance2_frames = [balance2_start + off for off in (0, 8, 16, 21, 25)]
+    balance_oscillation(base_plate, legs, balance2_frames, [0.0, 1.3, -1.2, 0.8, 0.0])
+    kf_leg_angle(legs, balance2_frames[-1], DEFAULT_HIP_ANGLE)
 
-    # 235-STAND_FRAME: stable stand -- exact rest pose, held.
+    # STAND_FRAME-10-STAND_FRAME: stable stand -- exact rest pose, held.
     kf_loc(base_plate, STAND_FRAME, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
     kf_rot_x(base_plate, STAND_FRAME, 0.0)
     kf_leg_angle(legs, STAND_FRAME, DEFAULT_HIP_ANGLE)
     kf_wheel_pitch(legs, STAND_FRAME, 0.0)
 
     lock_wheels_to_floor(base_plate, legs, floor_z, [(SETTLE_START, CROUCH_END), (LANDING_FRAME, STAND_FRAME)])
+    return STAND_FRAME
 
 
 def lock_wheels_to_floor(base_plate, legs, floor_z, frame_ranges):
@@ -774,8 +657,9 @@ def lock_wheels_to_floor(base_plate, legs, floor_z, frame_ranges):
     few mm off the floor at frames in between (measured up to -4.9mm mid-
     crouch-ramp) -- sampling every frame removes that gap instead of
     guessing more anchor points. Only applied to the two ranges that are
-    meant to stay grounded; the 162-205 jump/airborne arc is deliberately
-    excluded since it's supposed to leave the floor.
+    meant to stay grounded; the jump/airborne arc between them (CROUCH_END
+    to LANDING_FRAME, both physics-derived, see build_balance_and_jump) is
+    deliberately excluded since it's supposed to leave the floor.
 
     Correction is derived from the R wheel only and applied to both (via
     base_plate.z, shared by the whole chassis) -- correct as long as
@@ -806,7 +690,7 @@ def lock_wheels_to_floor(base_plate, legs, floor_z, frame_ranges):
                 "assumes symmetric legs and only corrects against R"
             )
             needed_z_mm = (floor_z - offset_r) / MM
-            kf_loc(base_plate, f, (0.0, 0.0, needed_z_mm), easing='EASE_IN_OUT')
+            kf_loc_z(base_plate, f, needed_z_mm, easing='EASE_IN_OUT')
 
 
 # ---------------------------------------------------------------------------
@@ -849,11 +733,11 @@ def main():
     }
 
     build_exploded_view(base_plate, standoffs, deck, battery, atom, rear_ext, legs)
-    build_balance_and_jump(base_plate, legs)
+    stand_frame = build_balance_and_jump(base_plate, legs)
 
     scene = bpy.context.scene
     scene.frame_start = 1
-    scene.frame_end = 245
+    scene.frame_end = stand_frame
     scene.frame_set(1)
 
     print("Dual-Wheel Legged Balancing Robot (precise) build complete.")

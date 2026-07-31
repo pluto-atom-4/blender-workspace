@@ -16,23 +16,22 @@ Sections:
   7. Main
 """
 
+import sys
 import bpy
-import bmesh
 import math
 from mathutils import Vector, Matrix
+
+_SCRIPTS_DIR = "/home/pluto-atom-4/blender-workspace/blender-project/scripts"
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from _model_common import (  # noqa: E402
+    MM, mm, mm_inv, AXIS_ROT, make_box, make_cylinder, merge_cutters,
+    boolean_diff_apply, set_ease, animate_assembly, kf_loc, kf_loc_z, kf_rot_x,
+)
 
 # ---------------------------------------------------------------------------
 # 1. Units / cleanup
 # ---------------------------------------------------------------------------
-
-MM = 0.001  # 1mm in Blender meters
-
-
-def mm(*vals):
-    if len(vals) == 1:
-        return vals[0] * MM
-    return tuple(v * MM for v in vals)
-
 
 COLLECTION_NAME = "DualWheelLeggedRobot"
 PREFIX = "DWLR_"
@@ -67,138 +66,9 @@ def new_collection():
 
 
 # ---------------------------------------------------------------------------
-# 2. Mesh primitives with explicit pivot control (bmesh, real mm dims)
-# ---------------------------------------------------------------------------
-
-def _link(obj, collection):
-    collection.objects.link(obj)
-    return obj
-
-
-def apply_transforms(obj):
-    bpy.context.view_layer.objects.active = obj
-    for o in bpy.context.selected_objects:
-        o.select_set(False)
-    obj.select_set(True)
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    obj.select_set(False)
-
-
-def shade_flat(obj):
-    for poly in obj.data.polygons:
-        poly.use_smooth = False
-
-
-def make_box(name, collection, size_mm, pivot_mm=(0.0, 0.0, 0.0), location_mm=(0.0, 0.0, 0.0)):
-    """Box of size_mm (x,y,z), local origin offset by pivot_mm from geometric center."""
-    sx, sy, sz = mm(*size_mm)
-    px, py, pz = mm(*pivot_mm)
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-    for v in bm.verts:
-        v.co.x = v.co.x * sx - px
-        v.co.y = v.co.y * sy - py
-        v.co.z = v.co.z * sz - pz
-    mesh = bpy.data.meshes.new(name + "_mesh")
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.update()
-    obj = bpy.data.objects.new(name, mesh)
-    _link(obj, collection)
-    obj.location = mm(*location_mm)
-    shade_flat(obj)
-    apply_transforms(obj)
-    return obj
-
-
-AXIS_ROT = {
-    'Z': None,
-    'X': Matrix.Rotation(math.radians(90), 3, 'Y'),
-    'Y': Matrix.Rotation(math.radians(90), 3, 'X'),
-}
-
-
-def make_cylinder(name, collection, radius_mm, depth_mm, axis='Z', segments=32,
-                   pivot_mm=(0.0, 0.0, 0.0), location_mm=(0.0, 0.0, 0.0), cap=True):
-    r = mm(radius_mm)
-    d = mm(depth_mm)
-    px, py, pz = mm(*pivot_mm)
-    bm = bmesh.new()
-    bmesh.ops.create_cone(bm, cap_ends=cap, cap_tris=False, segments=segments,
-                           radius1=r, radius2=r, depth=d)
-    rot = AXIS_ROT.get(axis)
-    if rot is not None:
-        bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=rot)
-    for v in bm.verts:
-        v.co.x -= px
-        v.co.y -= py
-        v.co.z -= pz
-    mesh = bpy.data.meshes.new(name + "_mesh")
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.update()
-    obj = bpy.data.objects.new(name, mesh)
-    _link(obj, collection)
-    obj.location = mm(*location_mm)
-    shade_flat(obj)
-    apply_transforms(obj)
-    return obj
-
-
-def merge_cutters(name, collection, cutter_specs):
-    """cutter_specs: list of dicts {type:'box'|'cyl', size/radius/depth/axis, pivot, location(local mm)}.
-    Builds ONE combined mesh so a single boolean modifier removes all of them."""
-    bm = bmesh.new()
-    for spec in cutter_specs:
-        sub = bmesh.new()
-        if spec['type'] == 'box':
-            sx, sy, sz = mm(*spec['size'])
-            bmesh.ops.create_cube(sub, size=1.0)
-            for v in sub.verts:
-                v.co.x *= sx
-                v.co.y *= sy
-                v.co.z *= sz
-        else:
-            r = mm(spec['radius'])
-            d = mm(spec['depth'])
-            bmesh.ops.create_cone(sub, cap_ends=True, cap_tris=False, segments=spec.get('segments', 24),
-                                   radius1=r, radius2=r, depth=d)
-            rot = AXIS_ROT.get(spec.get('axis', 'Z'))
-            if rot is not None:
-                bmesh.ops.rotate(sub, verts=sub.verts, cent=(0, 0, 0), matrix=rot)
-        lx, ly, lz = mm(*spec['location'])
-        for v in sub.verts:
-            v.co.x += lx
-            v.co.y += ly
-            v.co.z += lz
-        tmp_mesh = bpy.data.meshes.new("tmp_cutter")
-        sub.to_mesh(tmp_mesh)
-        sub.free()
-        bm.from_mesh(tmp_mesh)
-        bpy.data.meshes.remove(tmp_mesh)
-    mesh = bpy.data.meshes.new(name + "_mesh")
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.update()
-    obj = bpy.data.objects.new(name, mesh)
-    _link(obj, collection)
-    return obj
-
-
-def boolean_diff_apply(target, cutter_obj):
-    mod = target.modifiers.new(name="Cut", type='BOOLEAN')
-    mod.operation = 'DIFFERENCE'
-    mod.object = cutter_obj
-    mod.solver = 'EXACT'
-    bpy.context.view_layer.objects.active = target
-    bpy.ops.object.modifier_apply(modifier=mod.name)
-    mesh_data = cutter_obj.data
-    bpy.data.objects.remove(cutter_obj, do_unlink=True)
-    if mesh_data.users == 0:
-        bpy.data.meshes.remove(mesh_data)
-    shade_flat(target)
-
-
+# 2-3. Mesh primitives, boolean cutting -- shared with the _precise sibling
+# via _model_common (make_box/make_cylinder/merge_cutters/boolean_diff_apply,
+# imported above).
 # ---------------------------------------------------------------------------
 # 4. Component builders
 # ---------------------------------------------------------------------------
@@ -374,37 +244,19 @@ def build_leg(side, collection, chassis):
 
 
 # ---------------------------------------------------------------------------
-# 6. Animation
+# 6. Animation -- set_ease/animate_assembly/mm_inv/kf_loc/kf_loc_z/kf_rot_x
+# are shared via _model_common (imported above). This script's exploded
+# view holds at frame 120 (not _model_common's default hold_frame=90), so
+# every animate_assembly call below passes hold_frame=120 explicitly.
 # ---------------------------------------------------------------------------
-
-def set_ease(obj, easing='EASE_IN_OUT'):
-    if obj.animation_data and obj.animation_data.action:
-        for fc in obj.animation_data.action.fcurves:
-            for kp in fc.keyframe_points:
-                kp.interpolation = 'BEZIER'
-                kp.easing = easing
-
-
-def animate_assembly(obj, assembled_loc_mm, explode_dir_mm, seat_frame=60):
-    """Frame 1: exploded. seat_frame: seated. Holds static through frame 120."""
-    assembled = Vector(mm(*assembled_loc_mm))
-    exploded = assembled + Vector(mm(*explode_dir_mm))
-
-    obj.location = exploded
-    obj.keyframe_insert(data_path="location", frame=1)
-    obj.location = assembled
-    obj.keyframe_insert(data_path="location", frame=seat_frame)
-    obj.keyframe_insert(data_path="location", frame=120)
-    set_ease(obj, 'EASE_OUT')
-
 
 def build_exploded_view(chassis, atom, pcb, legs):
     # Chassis itself drops in from above
     chassis_seated = (0.0, 0.0, 0.0)
-    animate_assembly(chassis, chassis_seated, (0.0, 0.0, 150.0), seat_frame=45)
+    animate_assembly(chassis, chassis_seated, (0.0, 0.0, 150.0), seat_frame=45, hold_frame=120)
 
-    animate_assembly(atom, (0.0, 0.0, 0.0), (0.0, -60.0, 40.0), seat_frame=60)
-    animate_assembly(pcb, (0.0, 0.0, -CHASSIS_H / 2 + 3.0), (0.0, 60.0, -50.0), seat_frame=55)
+    animate_assembly(atom, (0.0, 0.0, 0.0), (0.0, -60.0, 40.0), seat_frame=60, hold_frame=120)
+    animate_assembly(pcb, (0.0, 0.0, -CHASSIS_H / 2 + 3.0), (0.0, 60.0, -50.0), seat_frame=55, hold_frame=120)
 
     # Parts are nested (each parented to the previous), so explode offsets
     # are LOCAL and compound down the chain -- keep each link's own delta
@@ -412,38 +264,12 @@ def build_exploded_view(chassis, atom, pcb, legs):
     for side, leg in legs.items():
         sign = 1.0 if side == 'R' else -1.0
         step = (sign * 15.0, 0.0, 0.0)
-        animate_assembly(leg['hip_servo'], mm_inv(leg['hip_servo'].location), (sign * 70.0, 0.0, 0.0), seat_frame=25)
-        animate_assembly(leg['upper_link'], mm_inv(leg['upper_link'].location), step, seat_frame=28)
-        animate_assembly(leg['knee_servo'], mm_inv(leg['knee_servo'].location), step, seat_frame=31)
-        animate_assembly(leg['lower_link'], mm_inv(leg['lower_link'].location), step, seat_frame=34)
-        animate_assembly(leg['wheel_actuator'], mm_inv(leg['wheel_actuator'].location), step, seat_frame=37)
-        animate_assembly(leg['wheel'], mm_inv(leg['wheel'].location), (0.0, 0.0, sign * -40.0), seat_frame=20)
-
-
-def mm_inv(vec):
-    return (vec.x / MM, vec.y / MM, vec.z / MM)
-
-
-def kf_loc(obj, frame, loc_mm, interp='BEZIER', easing='EASE_IN_OUT'):
-    obj.location = Vector(mm(*loc_mm))
-    obj.keyframe_insert(data_path="location", frame=frame)
-    if obj.animation_data and obj.animation_data.action:
-        for fc in obj.animation_data.action.fcurves:
-            if fc.data_path == "location":
-                kp = fc.keyframe_points[-1]
-                kp.interpolation = interp
-                kp.easing = easing
-
-
-def kf_rot_x(obj, frame, deg, interp='BEZIER', easing='EASE_IN_OUT'):
-    obj.rotation_euler.x = math.radians(deg)
-    obj.keyframe_insert(data_path="rotation_euler", index=0, frame=frame)
-    if obj.animation_data and obj.animation_data.action:
-        for fc in obj.animation_data.action.fcurves:
-            if fc.data_path == "rotation_euler" and fc.array_index == 0:
-                kp = fc.keyframe_points[-1]
-                kp.interpolation = interp
-                kp.easing = easing
+        animate_assembly(leg['hip_servo'], mm_inv(leg['hip_servo'].location), (sign * 70.0, 0.0, 0.0), seat_frame=25, hold_frame=120)
+        animate_assembly(leg['upper_link'], mm_inv(leg['upper_link'].location), step, seat_frame=28, hold_frame=120)
+        animate_assembly(leg['knee_servo'], mm_inv(leg['knee_servo'].location), step, seat_frame=31, hold_frame=120)
+        animate_assembly(leg['lower_link'], mm_inv(leg['lower_link'].location), step, seat_frame=34, hold_frame=120)
+        animate_assembly(leg['wheel_actuator'], mm_inv(leg['wheel_actuator'].location), step, seat_frame=37, hold_frame=120)
+        animate_assembly(leg['wheel'], mm_inv(leg['wheel'].location), (0.0, 0.0, sign * -40.0), seat_frame=20, hold_frame=120)
 
 
 def kf_joints(legs, frame, hip_deg, knee_deg, easing='EASE_IN_OUT'):
@@ -457,23 +283,36 @@ def kf_joints(legs, frame, hip_deg, knee_deg, easing='EASE_IN_OUT'):
 def build_balance_and_jump(chassis, legs):
     """Frames 121-250: IMU balance micro-oscillation, crouch, jump, fall,
     touchdown. Leg "compression" is driven by keyframing hip/knee joint
-    angles directly (see build_leg's FK-chain note) rather than an IK target."""
+    angles directly (see build_leg's FK-chain note) rather than an IK target.
 
-    # 121-160: balancing micro-oscillation (chassis pitch + tiny bob), legs
-    # stay extended (neutral stance) throughout.
+    Grounded ranges (121-180, 220-250) end with lock_wheels_to_floor's
+    dense per-frame correction, same fix ported from the _precise sibling
+    (issue #23) -- this 2-DOF hip+knee leg has no auto-leveling trick, so
+    chassis pitch/z and joint angle changes move the wheel a lot more than
+    a naively hand-picked chassis.z ever tracked correctly.
+    """
+    scene = bpy.context.scene
+    scene.frame_set(121)
+    bpy.context.view_layer.update()
+    floor_z = min((legs['R']['wheel'].matrix_world @ Vector(c)).z
+                   for c in legs['R']['wheel'].bound_box)
+
+    # 121-160: balancing micro-oscillation (chassis pitch only -- the old
+    # hand-picked z-bob is gone, lock_wheels_to_floor derives the correct
+    # z from the pitch instead), legs stay extended (neutral stance).
     osc_frames = [121, 131, 141, 151, 160]
     osc_pitch = [0.0, 1.4, -1.2, 1.0, 0.0]
-    osc_z = [0.0, 1.5, -1.0, 1.0, 0.0]
-    for f, pitch, z in zip(osc_frames, osc_pitch, osc_z):
+    for f, pitch in zip(osc_frames, osc_pitch):
         kf_rot_x(chassis, f, pitch)
-        kf_loc(chassis, f, (0.0, 0.0, z))
+        kf_loc(chassis, f, (0.0, 0.0, 0.0))
     kf_joints(legs, 121, 0.0, 0.0)
     kf_joints(legs, 160, 0.0, 0.0)
 
-    # 161-180: crouch (store energy)
+    # 161-180: crouch (store energy). z=0.0 placeholder -- lock_wheels_to_floor
+    # overwrites every frame in 121-180 with the FK-derived height.
     kf_loc(chassis, 161, (0.0, 0.0, 0.0))
     kf_rot_x(chassis, 161, 0.0)
-    kf_loc(chassis, 180, (0.0, 0.0, -25.0))
+    kf_loc(chassis, 180, (0.0, 0.0, 0.0))
     kf_rot_x(chassis, 180, -4.0)
     kf_joints(legs, 161, 0.0, 0.0)
     kf_joints(legs, 180, -30.0, 55.0, easing='EASE_IN')
@@ -494,8 +333,9 @@ def build_balance_and_jump(chassis, legs):
     kf_joints(legs, 210, -18.0, 40.0)
     kf_joints(legs, 220, 0.0, 0.0, easing='EASE_IN')
 
-    # 221-250: touchdown impact absorb -> resume balancing
-    kf_loc(chassis, 226, (0.0, 0.0, -22.0), easing='EASE_IN')
+    # 221-250: touchdown impact absorb -> resume balancing. z=0.0
+    # placeholders, overwritten by lock_wheels_to_floor (220-250 range).
+    kf_loc(chassis, 226, (0.0, 0.0, 0.0), easing='EASE_IN')
     kf_rot_x(chassis, 226, -3.0)
     kf_loc(chassis, 238, (0.0, 0.0, 0.0))
     kf_rot_x(chassis, 238, 0.0)
@@ -504,6 +344,38 @@ def build_balance_and_jump(chassis, legs):
     kf_joints(legs, 226, -32.0, 58.0, easing='EASE_IN')
     kf_joints(legs, 238, 0.0, 0.0)
     kf_joints(legs, 250, 0.0, 0.0)
+
+    # Range 1 extends one frame past the crouch-bottom anchor (180) to 181:
+    # the joint-angle path toward the 183 explosive-extension keyframe dips
+    # the wheel slightly before chassis.z's own rise (keyframed at 187)
+    # catches up, so 181 needs the same correction as the rest of the
+    # grounded stance even though liftoff is already underway by 183.
+    lock_wheels_to_floor(chassis, legs, floor_z, [(121, 181), (220, 250)])
+
+
+def lock_wheels_to_floor(chassis, legs, floor_z, frame_ranges):
+    """Densely re-keyframes chassis's Z (every frame, in the given ranges
+    only) so the wheel bottom sits exactly at floor_z -- ported from the
+    _precise sibling's fix for the same "sinking into the floor" bug
+    (issue #23). Derived from the R wheel and applied to both via
+    chassis.z (shared by the whole rig); asserted every frame rather than
+    assumed, since kf_joints always drives L/R identically here too."""
+    scene = bpy.context.scene
+    wheel_r = legs['R']['wheel']
+    wheel_l = legs['L']['wheel']
+    for start, end in frame_ranges:
+        for f in range(start, end + 1):
+            scene.frame_set(f)
+            chassis.location.z = 0.0
+            bpy.context.view_layer.update()
+            offset_r = min((wheel_r.matrix_world @ Vector(c)).z for c in wheel_r.bound_box)
+            offset_l = min((wheel_l.matrix_world @ Vector(c)).z for c in wheel_l.bound_box)
+            assert abs(offset_l - offset_r) < 0.001, (
+                f"frame {f}: L/R wheel-bottom offsets diverged "
+                f"({offset_l:.5f} vs {offset_r:.5f})"
+            )
+            needed_z_mm = (floor_z - offset_r) / MM
+            kf_loc_z(chassis, f, needed_z_mm, easing='EASE_IN_OUT')
 
 
 # ---------------------------------------------------------------------------
