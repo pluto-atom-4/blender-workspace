@@ -448,10 +448,10 @@ def build_leg(side, collection, base_plate, rear_ext):
     # not two independent links.
     # Static baseline rotation is DEFAULT_HIP_ANGLE, not 0 -- the leg stands
     # visibly hinged at rest (matching the reference hardware) rather than
-    # straightened. kf_leg_angle's later keyframes (starting frame 91) begin
+    # straightened. kf_leg_angle's later keyframes (starting frame 90) begin
     # from this same value, so there's no snap when balancing motion starts;
-    # frames 1-90 (exploded assembly) show the hinged stance throughout since
-    # nothing keyframes rotation before frame 91.
+    # frames 1-89 (exploded assembly) show the hinged stance throughout since
+    # nothing keyframes rotation before frame 90.
     default_rad = math.radians(DEFAULT_HIP_ANGLE)
 
     upper_plate_front = build_link_bar(f"{tag}_UpperPlateFront", collection, UPPER_LEN,
@@ -581,9 +581,14 @@ def build_exploded_view(base_plate, standoffs, deck, battery, atom, rear_ext, le
         animate_assembly(leg['hip_servo'], mm_inv(leg['hip_servo'].location), (sign * 55.0, -15.0, 0.0), seat_frame=50)
         animate_assembly(leg['upper_plate_front'], mm_inv(leg['upper_plate_front'].location), (sign * 45.0, 6.0, 10.0), seat_frame=58)
         animate_assembly(leg['upper_plate_back'], mm_inv(leg['upper_plate_back'].location), (sign * 45.0, -6.0, 10.0), seat_frame=61)
-        animate_assembly(leg['lower_plate'], mm_inv(leg['lower_plate'].location), (sign * 30.0, 0.0, -15.0), seat_frame=68)
-        animate_assembly(leg['ankle_block'], mm_inv(leg['ankle_block'].location), (sign * 20.0, 0.0, -20.0), seat_frame=72)
-        animate_assembly(leg['wheel_servo'], mm_inv(leg['wheel_servo'].location), (0.0, 0.0, -15.0), seat_frame=78)
+        # Z components here must stay >=0 (fly in from ABOVE, matching the
+        # upper_plate/hip_servo convention below) -- these three parent the
+        # wheel, so any negative Z explode offset drags the wheel below its
+        # already-floor-touching assembled position and it visibly plunges
+        # through the floor while still converging (issue #23 follow-up).
+        animate_assembly(leg['lower_plate'], mm_inv(leg['lower_plate'].location), (sign * 30.0, 0.0, 15.0), seat_frame=68)
+        animate_assembly(leg['ankle_block'], mm_inv(leg['ankle_block'].location), (sign * 20.0, 0.0, 20.0), seat_frame=72)
+        animate_assembly(leg['wheel_servo'], mm_inv(leg['wheel_servo'].location), (0.0, 0.0, 15.0), seat_frame=78)
         animate_assembly(leg['wheel'], mm_inv(leg['wheel'].location), (sign * 35.0, 0.0, 0.0), seat_frame=85)
 
 
@@ -631,15 +636,34 @@ def build_balance_and_jump(base_plate, legs):
               flat on the floor again.
       235-245 Stable stand: settle to exactly 58deg / z=0 / level pitch
               and hold -- final resting frame.
-    """
 
-    # 90-98: touchdown settle right after assembly -- brief absorb dip,
-    # feet stay on the floor throughout (this just sells weight settling
-    # in, it is not the main crouch).
+    Ends with lock_wheels_to_floor's dense correction pass, which re-derives
+    base_plate's required Z every frame in the grounded ranges instead of
+    trusting hand-picked anchor values to interpolate correctly in between.
+    """
+    scene = bpy.context.scene
+    # Reference "floor" height: wheel-bottom world Z at the rig's static
+    # built pose (hip=DEFAULT_HIP_ANGLE, base_plate.z=0). No leg-angle or
+    # pitch keyframes exist yet at this point in the function, and the
+    # assembly animation (already keyframed by build_exploded_view) holds
+    # base_plate at its assembled position by frame 90, so evaluating here
+    # gives the exact same rest-pose reference used throughout this file.
+    scene.frame_set(90)
+    bpy.context.view_layer.update()
+    floor_z = min((legs['R']['wheel'].matrix_world @ Vector(c)).z
+                   for c in legs['R']['wheel'].bound_box)
+
+    # 90-98: touchdown settle right after assembly -- brief absorb-and-
+    # recover beat, feet stay on the floor throughout (this just sells
+    # weight settling in, it is not the main crouch). Z values here are
+    # placeholders only -- lock_wheels_to_floor overwrites every frame in
+    # 90-162 with the exact FK-derived height afterward, since the
+    # hip-angle FK chain's effect on wheel height doesn't interpolate
+    # linearly between hand-picked anchors (see that function's docstring).
     kf_leg_angle(legs, 90, DEFAULT_HIP_ANGLE)
     kf_loc(base_plate, 90, (0.0, 0.0, 0.0))
     kf_leg_angle(legs, 94, DEFAULT_HIP_ANGLE - 8.0, easing='EASE_OUT')
-    kf_loc(base_plate, 94, (0.0, 0.0, -4.0), easing='EASE_OUT')
+    kf_loc(base_plate, 94, (0.0, 0.0, 0.0), easing='EASE_OUT')
     kf_leg_angle(legs, 98, DEFAULT_HIP_ANGLE)
     kf_loc(base_plate, 98, (0.0, 0.0, 0.0))
 
@@ -653,14 +677,17 @@ def build_balance_and_jump(base_plate, legs):
     kf_leg_angle(legs, 140, DEFAULT_HIP_ANGLE)
 
     # 140-162: crouch -- >=20% compression off the rest angle (using 34%:
-    # 58 -> 38), chassis stays flat and grounded.
+    # 58 -> 38), chassis stays flat and grounded. z=0.0 here is a
+    # placeholder -- lock_wheels_to_floor overwrites it (and every frame in
+    # between) with the FK-derived height needed to keep the wheel bottomed
+    # out on the floor instead of sinking through it.
     CROUCH_ANGLE = DEFAULT_HIP_ANGLE - 20.0  # 58 -> 38, a 34% reduction
     kf_rot_x(base_plate, 141, 0.0)
     kf_leg_angle(legs, 141, DEFAULT_HIP_ANGLE)
     kf_loc(base_plate, 141, (0.0, 0.0, 0.0))
     kf_rot_x(base_plate, 162, 0.0)
     kf_leg_angle(legs, 162, CROUCH_ANGLE, easing='EASE_IN_OUT')
-    kf_loc(base_plate, 162, (0.0, 0.0, -10.0), easing='EASE_IN_OUT')
+    kf_loc(base_plate, 162, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
 
     # 162-172: explosive jump -- legs stretch outward past the rest angle
     # in a hard EASE_OUT snap, model leaves the floor on a parabolic Z path.
@@ -679,7 +706,10 @@ def build_balance_and_jump(base_plate, legs):
     kf_rot_x(base_plate, 190, 0.0)
     kf_leg_angle(legs, 190, DEFAULT_HIP_ANGLE, easing='EASE_IN_OUT')
 
-    kf_loc(base_plate, 205, (0.0, 0.0, -14.0), easing='EASE_IN_OUT')  # impact absorb
+    # impact absorb -- legs fold back to CROUCH_ANGLE on touchdown. z=0.0
+    # is a placeholder, overwritten by lock_wheels_to_floor (205-245 range)
+    # same as the 140-162 crouch above.
+    kf_loc(base_plate, 205, (0.0, 0.0, 0.0), easing='EASE_IN_OUT')
     kf_leg_angle(legs, 205, CROUCH_ANGLE, easing='EASE_IN_OUT')
 
     # 205-235: balance again, feet flat on the floor.
@@ -697,6 +727,33 @@ def build_balance_and_jump(base_plate, legs):
     kf_rot_x(base_plate, 245, 0.0)
     kf_leg_angle(legs, 245, DEFAULT_HIP_ANGLE)
     kf_wheel_pitch(legs, 245, 0.0)
+
+    lock_wheels_to_floor(base_plate, legs, floor_z, [(90, 162), (205, 245)])
+
+
+def lock_wheels_to_floor(base_plate, legs, floor_z, frame_ranges):
+    """Densely re-keyframes base_plate's Z (every frame, in the given
+    ranges only) so the wheel bottom sits exactly at floor_z throughout --
+    not just at the hand-authored anchor frames above. The hip-angle FK
+    chain's contribution to wheel height is a nonlinear function of the
+    (already smoothly-keyframed) hip angle and chassis pitch, so bezier
+    interpolation between two *correct* anchor keyframes still drifts a
+    few mm off the floor at frames in between (measured up to -4.9mm mid-
+    crouch-ramp) -- sampling every frame removes that gap instead of
+    guessing more anchor points. Only applied to the two ranges that are
+    meant to stay grounded; the 162-205 jump/airborne arc is deliberately
+    excluded since it's supposed to leave the floor.
+    """
+    scene = bpy.context.scene
+    wheel = legs['R']['wheel']
+    for start, end in frame_ranges:
+        for f in range(start, end + 1):
+            scene.frame_set(f)
+            base_plate.location.z = 0.0
+            bpy.context.view_layer.update()
+            offset = min((wheel.matrix_world @ Vector(c)).z for c in wheel.bound_box)
+            needed_z_mm = (floor_z - offset) / MM
+            kf_loc(base_plate, f, (0.0, 0.0, needed_z_mm), easing='EASE_IN_OUT')
 
 
 # ---------------------------------------------------------------------------
