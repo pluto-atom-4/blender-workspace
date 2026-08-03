@@ -66,3 +66,8 @@ with a `_precise` suffix for higher-fidelity variants. See
 - `.claude/settings.json` (Claude Code side) blocks `rm -rf` / `git reset
   --hard` / `git push --force` via a `PreToolUse` hook; there is no
   Copilot-side equivalent enforcement mechanism today.
+- If a task explicitly requests the live/interactive MCP path and a
+  technical limitation forces a fallback to headless `run_blender_python`,
+  say so explicitly in the PR description, commit message, or issue
+  comment — don't substitute silently. Live-mode was a stated requirement,
+  not an implementation detail left to the agent's discretion.

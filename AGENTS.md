@@ -34,6 +34,12 @@ the `PreToolUse` hook blocking destructive Bash commands.
   enabled and Blender running interactively — depends on `bpy.app.timers`,
   which doesn't tick under `--background`.
 
+If a task explicitly requests the live/interactive path and a technical
+limitation forces a fallback to headless `run_blender_python` instead, say
+so explicitly in the PR description, commit message, or issue comment —
+don't substitute silently. The live-mode request is a stated requirement,
+not an implementation detail left to the agent's discretion.
+
 ## Workflow
 
 1. Write/iterate a script in `blender-project/scripts/`. Must `import bpy`.
