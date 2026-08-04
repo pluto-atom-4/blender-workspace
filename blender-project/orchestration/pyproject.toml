@@ -1,0 +1,17 @@
+[project]
+name = "blender-workspace-orchestration"
+version = "0.1.0"
+description = "LQR gain solver and Webots-driven tuning loop for the armed inverted pendulum (issue #28, Phase 1)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "control>=0.10",
+    "pandas>=2.2",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]

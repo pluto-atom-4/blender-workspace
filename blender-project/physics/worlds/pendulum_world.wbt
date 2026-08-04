@@ -1,0 +1,100 @@
+#VRML_SIM R2025a utf8
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+
+# Minimal Webots world for the armed inverted pendulum (issue #21 geometry,
+# issue #28 Phase 1 physics/LQR export). Wraps the mesh exported by
+# scripts/export_pendulum_to_webots.py (meshes/pendulum.obj, built from
+# blender-project/scripts/model_pendulum.py -- see PENDULUM.md for the
+# component dimension table). Mesh format is OBJ, not DAE, because this
+# system's Blender package doesn't ship a Collada exporter -- see the
+# NOTE in export_pendulum_to_webots.py. Webots' Mesh node accepts OBJ
+# directly. Dimensions below are pulled from that model, not re-derived:
+# 1 Blender unit == 1 mm, converted to Webots' meters here.
+#
+# Gyro and Accelerometer child nodes are named exactly "gyro" and
+# "accelerometer" per feat-idea.md's sensor-naming convention, so a
+# controller (not written in this PR -- see WEBOTS.md) can look them up by
+# name consistently.
+
+WorldInfo {
+  info [
+    "Armed inverted pendulum (issue #21 geometry) physics world for LQR tuning (issue #28, Phase 1)."
+  ]
+  basicTimeStep 8
+  contactProperties [
+    ContactProperties {
+      material1 "default"
+      material2 "default"
+      coulombFriction [
+        0.9
+      ]
+    }
+  ]
+}
+
+Viewpoint {
+  orientation -0.30 0.30 0.90 1.05
+  position 0.55 -0.65 0.42
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+RectangleArena {
+  floorSize 2 2
+  floorTileSize 0.5 0.5
+}
+
+# Chassis top Z = 102.0 mm -> center Z = 99.5 mm (CHASSIS_Z_TOP / CHASSIS_Z_CENTER
+# in model_pendulum.py). Wheel radius = 32.5 mm (WHEEL_DIAMETER / 2). The
+# exported mesh already has wheel bottoms sitting at Z=0 in its own local
+# coordinates, so the Robot itself is placed at the world origin.
+DEF ARMED_INVERTED_PENDULUM Robot {
+  translation 0 0 0
+  rotation 0 0 1 0
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.15 0.15 0.16
+        roughness 0.5
+        metalness 0
+      }
+      geometry Mesh {
+        url [
+          "meshes/pendulum.obj"
+        ]
+      }
+    }
+    Gyro {
+      name "gyro"
+      translation 0 0 0.0995
+    }
+    Accelerometer {
+      name "accelerometer"
+      translation 0 0 0.0995
+    }
+  ]
+  name "armed_inverted_pendulum"
+  # Coarse placeholder bounding box centered on the chassis plate
+  # (CHASSIS_WIDTH x CHASSIS_DEPTH x CHASSIS_THICKNESS, mm -> m), not a
+  # full convex hull of the whole rig -- adequate for a first loadable
+  # world, revisit if contact fidelity with the legs/wheels matters later.
+  boundingObject Transform {
+    translation 0 0 0.0995
+    children [
+      Box {
+        size 0.06 0.045 0.005
+      }
+    ]
+  }
+  physics Physics {
+    density -1
+    mass 0.15
+  }
+  controller "<none>"
+}

@@ -53,6 +53,26 @@ There are no separate `render_dual_wheel_legged_robot*.py` scripts for
 this feature — both model scripts persist their own `.blend` under
 `blender-project/renders/` directly when run headless.
 
+## Physics simulation & LQR tuning (issue #28)
+
+Trimmed Phase-1 slice of the Webots + LQR control pipeline proposed in issue
+#28: exports the existing armed inverted pendulum geometry (issue #21) into
+a Webots world, and a standalone LQR gain solver/tuning loop against a
+linearized pendulum-on-cart model. No LangGraph, ESP32/PlatformIO firmware,
+HIL bridge, CLI entry points, or dashboard yet -- see [WEBOTS.md](WEBOTS.md)
+for what's deferred and why. Full writeup: [WEBOTS.md](WEBOTS.md).
+
+| Script/module | Tool | Purpose |
+|---|---|---|
+| `scripts/export_pendulum_to_webots.py` | `run_blender_python` (headless) | Rebuilds the armed inverted pendulum rig via `model_pendulum.py` and exports it to `physics/worlds/meshes/pendulum.obj` for Webots (OBJ, not DAE -- this system's Blender build has no Collada exporter; see the script's docstring). |
+| `physics/worlds/pendulum_world.wbt` | `webots` | Minimal Webots world wrapping `pendulum.obj`, with `Gyro`/`Accelerometer` nodes named `"gyro"`/`"accelerometer"` per `feat-idea.md`'s convention. |
+| `orchestration/lqr_tuner.py` | `uv run --project blender-project/orchestration python lqr_tuner.py` | `solve_lqr_gain()` (Riccati-equation LQR solve), `run_webots_headless()` + `parse_telemetry()` (subprocess wrapper around `webots`, CSV/JSON telemetry parse), and `tune_lqr()` (plain Q/R iteration loop, no LangGraph). |
+| `orchestration/tests/test_lqr_tuner.py` | `uv run --project blender-project/orchestration pytest` | Unit tests for `solve_lqr_gain()` against closed-form and `control.lqr()`-cross-checked systems. No Webots-dependent test. |
+
+`blender-project/orchestration/` is its own isolated `uv` subproject
+(`pyproject.toml`, own `uv.lock`), mirroring `blender-mcp/`'s pattern rather
+than a monolithic root environment.
+
 ## Reference assets
 
 - `blender-project/assets/hq720.jpg` — reference image used while modeling
