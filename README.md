@@ -18,10 +18,13 @@ blender-mcp/       FastMCP server exposing Blender to agents
   main.py           Entry point stub
   pyproject.toml     uv-managed Python project (>=3.12)
 
-blender-project/    Operational workspace
-  scripts/           Generative Python automations (models, renders)
-  assets/            Reference images / source assets
+blender-project/    Operational workspace -- see blender-project/README.md
+                     for the full directory rundown
+  scripts/           Generative Python automations (models, renders, exports)
   renders/           .blend files and rendered preview images
+  orchestration/     Standalone uv subproject: Webots export + LQR tuning
+  physics/           Webots world file and exported mesh assets
+  assets/            Reference images / source assets used by scripts
 ```
 
 ## Requirements
@@ -71,7 +74,11 @@ agent client (e.g. Claude Code):
 
 See [DESIGN.md](DESIGN.md) for architecture, [AGENTS.md](AGENTS.md) for
 agent operating rules, [SKILLS.md](SKILLS.md) for the automation scripts
-available today, [PENDULUM.md](PENDULUM.md) for the armed inverted pendulum
-robot build (model, physics, control, renders), [CONTRIBUTE.md](CONTRIBUTE.md)
-for contribution guidelines, and [SECURITY.md](SECURITY.md) for the security
+available today, [blender-project/README.md](blender-project/README.md) for
+the full `blender-project/` directory rundown, [PENDULUM.md](PENDULUM.md)
+for the armed inverted pendulum robot build (model, physics, control,
+renders), [LEGGED_ROBOT.md](LEGGED_ROBOT.md) for the dual-wheel legged
+balancing robot build, [WEBOTS.md](WEBOTS.md) for the Webots physics export
+and LQR gain-tuning pipeline, [CONTRIBUTE.md](CONTRIBUTE.md) for
+contribution guidelines, and [SECURITY.md](SECURITY.md) for the security
 model.

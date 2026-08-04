@@ -18,12 +18,22 @@ __pycache__/
 
 *.png
 
+blender-project/anime/
+# Trailing-slash dir patterns can't be re-included by a `!` exception below
+# (git refuses to re-include a file whose parent directory is excluded), so
+# assets/ uses a `dir/*` wildcard instead to let the two exceptions work.
+blender-project/assets/*
+!blender-project/assets/hq720.jpg
+!blender-project/assets/inverted_pendulum_simulation.py
+blender-project/images/
 blender-project/renders/*.mp4
+blender-project/work/
 
 gh-issue*.*
 issue*.json
 
 chore-idea.md
+feat-idea.md
 
 # Local context-audit run output (CI writes/discards its own copy)
 audit-output.txt
