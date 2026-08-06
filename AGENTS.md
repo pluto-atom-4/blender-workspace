@@ -10,6 +10,41 @@ Tool permissions and safety hooks: [.claude/settings.json](.claude/settings.json
 (committed) + `.claude/settings.local.json` (personal, gitignored) — includes
 the `PreToolUse` hook blocking destructive Bash commands.
 
+## Agent Roles
+
+### Architect/Planner
+- Draft implementation plans (tasks.md)
+- Design module boundaries + APIs
+- Write architectural decisions
+- ✅ Read codebase, write tasks.md + docs/
+- ❌ FORBIDDEN: Write production code
+
+### Coder/Implementer
+- Implement features, write tests
+- Create commits
+- Flag design issues to Architect
+- ✅ Write src/, tests/, run tests
+- ❌ FORBIDDEN: Modify tasks.md, CLAUDE.md, AGENTS.md, skip tests
+
+### Reviewer/Tester
+- Verify implementation vs tasks.md
+- Run full test suite (pytest, coverage, lint)
+- Check test coverage, code quality
+- ✅ Read codebase, run verification commands
+- ❌ FORBIDDEN: Modify production code, merge without human approval
+
+---
+
+## Handover Protocol
+
+```
+ARCHITECT → CODER → REVIEWER → HUMAN (merge)
+```
+
+**Approval gates:** Gate 1 (plan) before code → Gate 2 (verification) before merge
+
+---
+
 ## Project layout
 
 - `blender-mcp/` — local FastMCP server exposing Blender to agents.
