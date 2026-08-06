@@ -1,5 +1,6 @@
 ---
 name: coder
+description: Implement features and tests from tasks.md; writes src/ and tests/, forbidden from governance files.
 model: claude-haiku-4.5 # Use a strong coding model for synthesis
 tools:
   - Read

@@ -1,5 +1,6 @@
 ---
 name: architect
+description: Draft implementation plans, module boundaries, and architectural decisions; read-only against code.
 model: claude-sonnet-5 # Use Sonnet or Opus for deep planning & architecture
 tools:
   - Read

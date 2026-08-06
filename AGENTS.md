@@ -47,13 +47,8 @@ ARCHITECT → CODER → REVIEWER → HUMAN (merge)
 
 ## Project layout
 
-- `blender-mcp/` — local FastMCP server exposing Blender to agents.
-  Infrastructure: change only when the tool interface itself must change.
-  - `addon/mcp_bridge_addon.py` — Blender addon opening a TCP bridge into a
-    live, interactive Blender GUI session, backing `run_blender_python_live`.
-- `blender-project/scripts/` — generative Python automations; day-to-day work.
-- `blender-project/renders/` — pipeline output (`.blend`, preview PNGs).
-  Build artifacts: regenerate via scripts, don't hand-edit.
+- `blender-mcp/` — infrastructure; change only when the tool interface itself must change.
+- `blender-project/renders/` — build artifacts; regenerate via scripts, don't hand-edit.
 
 ## MCP tools
 
