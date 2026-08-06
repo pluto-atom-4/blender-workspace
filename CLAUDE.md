@@ -7,13 +7,6 @@
 - `.github/copilot-instructions.md` — GitHub Copilot's equivalent of this file, kept in sync manually (Copilot doesn't read CLAUDE.md).
 - No linter/formatter/test suite is configured in this repo yet (no `black`/`flake8`/`pytest` installed) — don't assume `wc -l`/`jq`/build-command gates exist beyond what's actually wired up above.
 
-## Project Structure
-- `blender-mcp/`: Contains the localized Python FastMCP engine server.
-  - `addon/mcp_bridge_addon.py`: Blender addon exposing a local TCP bridge into an already-open, interactive Blender GUI session.
-- `blender-project/`: The operational space containing script code and visual outputs.
-  - `scripts/`: Store generative Python automations here.
-  - `renders/`: Target folder for pipeline image/video renders.
-
 ## Environment and Display
 - Running on KDE Wayland (Debian 13).
 - Blender commands executed inside `blender-mcp` wrapper scripts must pass proper environment parameters if a UI window needs tracking.
