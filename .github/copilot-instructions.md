@@ -47,6 +47,20 @@ Three tools, not interchangeable:
 with a `_precise` suffix for higher-fidelity variants. See
 [SKILLS.md](../SKILLS.md) for the current script inventory.
 
+## Branching / isolation policy
+
+Default to a plain branch off `main`. Reserve `git worktree` for tasks that
+genuinely run concurrently against different branches at the same time, or
+when a human explicitly asks for worktree isolation — not as a default.
+`blender-project/renders/*.blend` files are binary (0.5–1.3MB each), so
+every worktree duplicates them on disk, and worktrees/branches aren't
+reliably auto-cleaned once written to (see issue #48: 3 merged worktrees +
+4 dangling branches found unpruned, plus a near-miss where an uncommitted
+`.blend` produced inside a worktree nearly got silently discarded by
+`git worktree remove`). If a worktree task produces a build artifact that
+isn't purely reproducible by re-running its script, commit it — or flag
+explicitly that it's uncommitted and why — before the worktree is removed.
+
 ## Environment
 
 - KDE Wayland on Debian 13. A script needing a visible UI window must pass

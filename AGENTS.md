@@ -45,6 +45,32 @@ ARCHITECT → CODER → REVIEWER → HUMAN (merge)
 
 ---
 
+## Branching / isolation policy
+
+Default to a plain branch: `git checkout -b <name>` off `main`. This covers
+the normal Architect → Coder → Reviewer chain (sequential, one agent at a
+time) with no extra disk cost or cleanup burden.
+
+Use `git worktree` (e.g. the Agent tool's `isolation: "worktree"`) only when:
+- multiple agents genuinely run **concurrently** against different branches
+  at the same time (not just sequential handoffs), or
+- a human explicitly requests worktree isolation for a task.
+
+Don't default to worktree "just in case" — `blender-project/renders/*.blend`
+files are binary and 0.5–1.3MB each, so every worktree duplicates them on
+disk, and worktrees/branches created this way are **not** reliably
+auto-cleaned once an agent has written to them. A repo audit (issue #48)
+found 3 merged worktrees and 4 dangling `worktree-agent-*` branches sitting
+unpruned, plus a near-miss where an untracked `.blend` produced inside a
+worktree almost got silently discarded by `git worktree remove` because it
+diverged from a same-named untracked file in the main tree. If a worktree
+task produces a build artifact that isn't reproducible purely by re-running
+its script, commit it (or note explicitly that it's uncommitted and why)
+before the worktree is removed — don't rely on cleanup to happen safely on
+its own.
+
+---
+
 ## Project layout
 
 - `blender-mcp/` — infrastructure; change only when the tool interface itself must change.
