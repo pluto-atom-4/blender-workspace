@@ -14,15 +14,18 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import linkage_kinematics  # noqa: E402
 from linkage_kinematics import (  # noqa: E402
     ANKLE_DROP_MM,
     CROUCH_ANGLE_DEG,
     LAUNCH_ANGLE_DEG,
+    LINEAR_VECTOR_MAX_DEVIATION_MM,
     LOWER_LEN_MM,
     UPPER_LEN_MM,
     ankle_position,
     derived_stroke_mm,
     horizontal_moment_arm_mm,
+    max_chord_deviation_mm,
     mechanical_advantage_ratio,
     pea_spring_constant_n_m_per_rad,
 )
@@ -132,3 +135,60 @@ def test_pea_spring_constant_is_positive_and_finite():
 
     assert math.isfinite(k)
     assert k > 0.0
+
+
+def test_max_chord_deviation_matches_measured_value():
+    """Regression guard (issue #41): pins the current leg linkage's
+    max_chord_deviation_mm() at the measured ~15.648mm figure the #41
+    architect plan cited (and this module's own __main__ report prints).
+    Guards against silent geometry drift changing the number the
+    LINEAR_VECTOR_MAX_DEVIATION_MM gate is evaluated against."""
+    dev_mm = max_chord_deviation_mm()
+
+    assert dev_mm == pytest.approx(15.648, abs=0.01)
+
+
+def test_max_chord_deviation_is_scale_invariant_under_upper_len():
+    """Issue #41 finding: because ankle_position() is a pure circular arc
+    of radius UPPER_LEN_MM (theta-sweep endpoints fixed), both the sampled
+    curve and its chord scale linearly with UPPER_LEN_MM -- so
+    max_chord_deviation_mm() at UPPER_LEN_MM=2R is (to within float noise)
+    exactly 2x the deviation at UPPER_LEN_MM=R. This documents *why*
+    increasing UPPER_LEN_MM does NOT fix the Linear Vector Rule gate (it
+    makes the deviation worse, not better) -- a guard against someone later
+    "fixing" issue #41 by just bumping UPPER_LEN_MM without re-reading the
+    rationale in LINEAR_VECTOR_MAX_DEVIATION_MM's comment.
+
+    Uses the same module-global-reassignment override mechanism
+    model_leg_linkage_deviation.py (issue #42) uses for build_leg()'s
+    UPPER_LEN/HIP_Z, since ankle_position() resolves UPPER_LEN_MM as a free
+    variable from linkage_kinematics's own module globals at call time.
+    Restores the original value afterward so no test order dependency is
+    introduced.
+    """
+    original_upper_len_mm = linkage_kinematics.UPPER_LEN_MM
+    try:
+        linkage_kinematics.UPPER_LEN_MM = original_upper_len_mm
+        dev_at_r = linkage_kinematics.max_chord_deviation_mm()
+
+        linkage_kinematics.UPPER_LEN_MM = original_upper_len_mm * 2.0
+        dev_at_2r = linkage_kinematics.max_chord_deviation_mm()
+    finally:
+        linkage_kinematics.UPPER_LEN_MM = original_upper_len_mm
+
+    assert dev_at_2r == pytest.approx(2.0 * dev_at_r, rel=1e-9)
+    # Sanity-check the override was actually restored, not just re-set to
+    # the same numeric value coincidentally.
+    assert linkage_kinematics.UPPER_LEN_MM == original_upper_len_mm
+
+
+def test_linear_vector_rule_passes_with_resolved_threshold():
+    """Confirms the module's own PASS/FAIL logic (mirrored from __main__)
+    reports PASS with the issue #41-resolved 18mm gate against the
+    measured ~15.648mm deviation -- i.e. LINEAR_VECTOR_MAX_DEVIATION_MM was
+    actually raised, and the linkage's own already-shipped geometry clears
+    it with the documented margin."""
+    dev_mm = max_chord_deviation_mm()
+
+    assert LINEAR_VECTOR_MAX_DEVIATION_MM == pytest.approx(18.0)
+    assert dev_mm <= LINEAR_VECTOR_MAX_DEVIATION_MM
