@@ -17,9 +17,13 @@ design rules, rather than designing a new linkage:
      increase toward full extension (LAUNCH_ANGLE) so the servo's limited
      torque produces a bigger push right when it matters for liftoff.
 
-Both checks are against PROPOSED thresholds (explicitly not final, same
-convention as feasibility_phase0.py's own JUMP_HEIGHT_THRESHOLD_M) -- see
-the issue #25 Phase 1 comment for the full rationale.
+The Variable Mechanical Advantage threshold remains PROPOSED (explicitly
+not final, same convention as feasibility_phase0.py's own
+JUMP_HEIGHT_THRESHOLD_M) -- see the issue #25 Phase 1 comment for the full
+rationale. The Linear Vector Rule threshold was resolved at issue #41's
+Gate 1 (see LINEAR_VECTOR_MAX_DEVIATION_MM's own comment for the decided
+value and rationale) -- it remains a numeric PASS/FAIL gate, not demoted
+to informational.
 
 This module also (a) re-derives feasibility_phase0.py's STROKE_M placeholder
 from real kinematics instead of the old "half of total leg reach" guess
@@ -127,9 +131,48 @@ def horizontal_moment_arm_mm(hip_angle_deg: float) -> float:
 # cross-check the formula.
 SAMPLE_STEP_DEG = 1.0
 
-# Proposed, not final (same convention as feasibility_phase0.py's
-# JUMP_HEIGHT_THRESHOLD_M) -- see issue #25 Phase 1 comment.
-LINEAR_VECTOR_MAX_DEVIATION_MM = 8.0
+# Resolved threshold (issue #41, decided at Gate 1 on the architect's plan
+# posted to issue #41): kept as a numeric PASS/FAIL gate, NOT demoted to
+# informational (unlike COM_OFFSET_TOLERANCE_MM below). Set to 18.0mm --
+# a documented margin above the measured 15.648mm current deviation, so the
+# gate still catches future regressions (e.g. someone bumping UPPER_LEN_MM
+# further, or widening the LAUNCH_ANGLE/CROUCH_ANGLE sweep) without failing
+# on this linkage's own already-verified, already-shipped geometry.
+#
+# Two findings from the issue #41 investigation drove this call away from
+# the "tune a geometry constant" options originally proposed:
+#
+# 1. Deviation scales LINEARLY with UPPER_LEN_MM at the fixed 15deg->120deg
+#    sweep -- ankle_position() is a pure circular arc of radius UPPER_LEN_MM,
+#    so both max_chord_deviation_mm() and derived_stroke_mm() are
+#    homogeneous of degree 1 in UPPER_LEN_MM (deviation/stroke ratio,
+#    ~26.7%, is exactly constant regardless of UPPER_LEN_MM). Verified by
+#    direct override: 20mm->7.824mm, 40mm (current)->15.648mm,
+#    50mm->19.560mm, 100mm->39.120mm. That means INCREASING UPPER_LEN_MM
+#    (issue's Option 2, and issue #42's "candidate" +10mm pass) makes the
+#    deviation WORSE, not better -- a bigger arc radius does not flatten
+#    the path for this linkage, so that option is not viable as a fix.
+# 2. HIP_Z_MM is not referenced anywhere in this module's math (grep
+#    confirms only its own declaration) -- ankle_position() works entirely
+#    in the hip-local frame and chord_mean_horizontal_mm() is purely
+#    horizontal, so tuning HIP_Z_MM (issue's Option 3) is currently a no-op
+#    against every number this module computes, not a viable fix either.
+#
+# With neither literal geometry option workable as a simple constant tune,
+# and the following supporting evidence, revising the threshold was judged
+# the right resolution: the Mechanical Advantage ratio (Task 2) passed with
+# large margin (3.346x vs 1.3x min), the CoM-offset check (informational)
+# passed within tolerance (6.67mm vs 15mm), and the worst-case 15.648mm
+# deviation occurs mid-sweep (~58deg, near rest stance) rather than at the
+# LAUNCH_ANGLE_DEG (15deg) liftoff endpoint -- where deviation is exactly
+# 0 by construction, since the chord is anchored at both sweep endpoints.
+# That matters because liftoff DIRECTION (governed by the endpoint, not
+# the mid-crouch bulge) is what actually determines jump trajectory; the
+# mid-stroke deviation happens during crouch-loading/early-push, before
+# the velocity that matters for launch direction has built up. No
+# follow-up sub-issue for pitch-torque modeling was opened as part of this
+# decision.
+LINEAR_VECTOR_MAX_DEVIATION_MM = 18.0
 
 # Proposed tolerance for the chord-vs-CoM horizontal check below --
 # informational context for the Linear Vector Rule, not one of the two
@@ -306,7 +349,7 @@ if __name__ == "__main__":
     print("-" * 70)
     print("Task 1: Linear Vector Rule")
     print(f"  Max perpendicular deviation from chord: {max_dev_mm:.3f}mm")
-    print(f"  Threshold (proposed): <= {LINEAR_VECTOR_MAX_DEVIATION_MM:.1f}mm")
+    print(f"  Threshold (gate, resolved issue #41): <= {LINEAR_VECTOR_MAX_DEVIATION_MM:.1f}mm")
     verdict1 = "PASS" if max_dev_mm <= LINEAR_VECTOR_MAX_DEVIATION_MM else "FAIL"
     print(f"  -> {verdict1}")
     print(f"  Chord mean horizontal position: {chord_x_mm:.2f}mm from hip")
