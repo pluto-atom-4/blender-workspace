@@ -219,6 +219,45 @@ def build_ankle_block(name, collection):
     return make_box(name, collection, (16.0, 20.0, 14.0), material=MAT_METAL())
 
 
+# --- PEA (parallel elastic actuation) spring -- placeholder geometry -------
+SPRING_LENGTH_MM = 22.0  # placeholder coil housing length
+SPRING_RADIUS_MM = 2.5
+SPRING_LATERAL_OFFSET_MM = 6.0  # tucks the spring toward centerline, same
+                                 # "tuck inward" convention as build_servo's
+                                 # sign-flipped pivot.x (see that docstring)
+
+
+def build_pea_spring(tag, collection, sign):
+    """Placeholder PEA (parallel elastic actuation) spring geometry --
+    issue #25 Phase 1, Task 4. A simple representative tube (matches
+    build_knuckle()'s fidelity level: one low-segment primitive standing in
+    for a real part, not a physically modeled coil), NOT a simulated
+    spring -- no Blender spring/soft-body constraint is attached here.
+    Sizing (target N*m/rad spring constant) is computed separately in
+    orchestration/linkage_kinematics.py's pea_spring_constant_n_m_per_rad();
+    Phase 2 is where that number actually gets used, as a Webots
+    HingeJoint.springConstant.
+
+    Conceptually spans from a fixed anchor near the hip on the chassis side
+    to a point partway up upper_plate_front, running roughly parallel to
+    the plate -- but this is a single rigid mesh, built once at
+    DEFAULT_HIP_ANGLE and then parented to upper_plate_front (see
+    build_leg()'s call site) so it swings rigidly with the hip angle like
+    knee_knuckle/horn do. It is only geometrically exact at the rest pose;
+    a static single-piece mesh can't stretch between two independently
+    moving points across the animation without per-frame deformation,
+    which is out of scope for this placeholder (same simplification this
+    file already accepts for every other rigid FK-chain part).
+
+    sign mirrors the small lateral tuck-inward offset for L/R legs, same
+    convention as build_servo's pivot.x flip.
+    """
+    return make_cylinder(f"{tag}_PeaSpring", collection, SPRING_RADIUS_MM, SPRING_LENGTH_MM,
+                          axis='Z', segments=10,
+                          location_mm=(-sign * SPRING_LATERAL_OFFSET_MM, 0.0, -SPRING_LENGTH_MM / 2),
+                          material=MAT_METAL())
+
+
 def build_wheel(name, collection):
     r = WHEEL_R
     w = WHEEL_W
@@ -353,6 +392,13 @@ def build_leg(side, collection, base_plate):
     knee_knuckle.rotation_euler.x = -default_rad
     knee_knuckle.parent = upper_plate_front
 
+    # PEA spring (issue #25 Phase 1, Task 4) -- placeholder geometry only,
+    # parented to upper_plate_front so it swings rigidly with the hip angle
+    # like knee_knuckle does (see build_pea_spring()'s docstring for why a
+    # static mesh can only be geometrically exact at the rest pose).
+    pea_spring = build_pea_spring(tag, collection, sign)
+    pea_spring.parent = upper_plate_front
+
     lower_plate = build_link_bar(f"{tag}_LowerPlate", collection, LOWER_LEN,
                                   width_mm=12.0, thick_mm=6.0)
     lower_plate.location = (0.0, 0.0, 0.0)
@@ -388,6 +434,7 @@ def build_leg(side, collection, base_plate):
     return {
         'hip_servo': hip_servo, 'horn': horn,
         'upper_plate_front': upper_plate_front, 'upper_plate_back': upper_plate_back,
+        'pea_spring': pea_spring,
         'knee_knuckle': knee_knuckle, 'lower_plate': lower_plate,
         'ankle_block': ankle_block, 'wheel_servo': wheel_servo, 'wheel': wheel,
         'hip_world': hip_world,

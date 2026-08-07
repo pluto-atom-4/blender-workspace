@@ -90,9 +90,15 @@ TORQUE_DERATE_FRACTION = 0.5
 # possible assumption, not a linkage-accurate one.
 LEVER_ARM_M = UPPER_LEN_MM / 1000.0  # 0.04 m
 
-# Stroke: half the total leg reach (upper + lower + ankle drop), an
-# assumed crouch-to-extension vertical travel.
-STROKE_M = (UPPER_LEN_MM + LOWER_LEN_MM + ANKLE_DROP_MM) / 2.0 / 1000.0  # 0.04 m
+# Stroke: real vertical (Z) travel of the ankle between CROUCH_ANGLE
+# (120deg) and LAUNCH_ANGLE (15deg), derived from Phase 1's
+# linkage_kinematics.py (ankle_position()-based FK, not this file's old
+# "half of total leg reach" guess -- see that module's derived_stroke_mm()
+# for the calculation). Also matches
+# model_dual_wheel_legged_robot_precise.py's own CROUCH_ANGLE/LAUNCH_ANGLE
+# comment, which independently cites ~59mm from an empirical per-frame
+# chassis-Z sweep.
+STROKE_M = 0.058637  # 58.637mm, from linkage_kinematics.derived_stroke_mm()
 
 GRAVITY_M_S2 = 9.81
 
