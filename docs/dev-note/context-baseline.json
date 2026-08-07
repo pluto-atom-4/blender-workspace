@@ -1,15 +1,15 @@
 {
-  "timestamp": "2026-07-26T16:52:39.956138",
+  "timestamp": "2026-08-07T14:56:40.077304",
   "files": [
     {
       "path": "CLAUDE.md",
-      "lines": 38,
-      "chars": 3318,
-      "tokens_estimated": 829,
+      "lines": 31,
+      "chars": 2886,
+      "tokens_estimated": 721,
       "budget": 1500,
       "status": "compliant",
-      "percent_of_budget": 55.266666666666666,
-      "last_modified": "2026-07-25T14:18:46.248990"
+      "percent_of_budget": 48.06666666666667,
+      "last_modified": "2026-08-06T14:49:21.213725"
     },
     {
       "path": "DESIGN.md",
@@ -23,23 +23,23 @@
     },
     {
       "path": "AGENTS.md",
-      "lines": 67,
-      "chars": 3160,
-      "tokens_estimated": 790,
+      "lines": 112,
+      "chars": 4299,
+      "tokens_estimated": 1074,
       "budget": 1000,
-      "status": "compliant",
-      "percent_of_budget": 79.0,
-      "last_modified": "2026-07-26T16:42:46.946640"
+      "status": "warning",
+      "percent_of_budget": 107.4,
+      "last_modified": "2026-08-07T14:56:35.762120"
     },
     {
       "path": ".github/copilot-instructions.md",
-      "lines": 68,
-      "chars": 3062,
-      "tokens_estimated": 765,
+      "lines": 87,
+      "chars": 4249,
+      "tokens_estimated": 1062,
       "budget": 1000,
-      "status": "compliant",
-      "percent_of_budget": 76.5,
-      "last_modified": "2026-07-25T14:18:46.244990"
+      "status": "warning",
+      "percent_of_budget": 106.2,
+      "last_modified": "2026-08-07T14:45:08.006710"
     },
     {
       "path": ".claude/skills/pre-commit-enforce/SKILL.md",
@@ -64,13 +64,16 @@
   ],
   "summary": {
     "total_files": 6,
-    "compliant": 4,
-    "warnings": 0,
+    "compliant": 2,
+    "warnings": 2,
     "over_budget": 0,
-    "total_tokens": 5231,
+    "total_tokens": 5704,
     "total_budget": 6500,
-    "utilization_percent": 60.3
+    "utilization_percent": 67.6
   },
-  "warnings": [],
+  "warnings": [
+    "AGENTS.md: 107% of budget",
+    ".github/copilot-instructions.md: 106% of budget"
+  ],
   "errors": []
 }
