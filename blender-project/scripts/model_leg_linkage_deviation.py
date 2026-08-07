@@ -404,7 +404,7 @@ def main():
         print("-" * 70)
         print(f"Pass: {pass_name} (UPPER_LEN override used to build this pass)")
         print(f"  Max perpendicular deviation from chord: {result['max_dev_mm']:.3f}mm")
-        print(f"  Threshold (proposed): <= {lk.LINEAR_VECTOR_MAX_DEVIATION_MM:.1f}mm")
+        print(f"  Threshold (gate, resolved issue #41): <= {lk.LINEAR_VECTOR_MAX_DEVIATION_MM:.1f}mm")
         print(f"  -> {result['verdict']}")
         print(f"  Chord mean horizontal position: {result['chord_x_mm']:.2f}mm from hip")
         print(f"  CoM horizontal offset estimate: {lk.COM_HORIZONTAL_OFFSET_FROM_HIP_MM:.2f}mm from hip")
