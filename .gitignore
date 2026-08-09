@@ -41,3 +41,10 @@ audit-output.txt
 # Externally maintained skill, not vendored here -- install/update from
 # https://github.com/pluto-atom-4/pre-commit-enforce-skill
 .claude/skills/pre-commit-enforce/
+
+# Webots per-world UI/perspective-state cache (auto-created next to a
+# .wbt the moment webots opens/validates it, even in --batch mode --
+# confirmed empirically: `webots --batch --mode=fast --minimize
+# --no-rendering pendulum_world.wbt` creates .pendulum_world.wbproj on
+# the spot). Not meaningful project config, analogous to __pycache__/.
+blender-project/physics/worlds/*.wbproj

@@ -1,0 +1,414 @@
+#VRML_SIM R2025a utf8
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+
+# Webots world for the dual-wheel legged balancing robot (issue #25 Phase 2;
+# geometry from model_dual_wheel_legged_robot_precise.py, LEGGED_ROBOT.md).
+# Wraps the meshes exported by scripts/export_legged_robot_to_webots.py
+# (meshes/legged_robot_*.obj). WorldInfo/Viewpoint/TexturedBackground/
+# RectangleArena boilerplate below is reused VERBATIM from pendulum_world.wbt
+# per the issue #25 Phase 2 plan.
+#
+# Mesh format is OBJ, not DAE, for the same reason as pendulum_world.wbt --
+# this system's Blender package has no Collada exporter (see
+# export_pendulum_to_webots.py's NOTE).
+#
+# Articulation (the first in this repo -- pendulum_world.wbt's mesh is one
+# static flattened Shape with no joints): one driven hip HingeJoint per leg
+# (rotational, axis 1 0 0) carrying a RIGID lower-leg subtree (no second
+# HingeJoint for the knee -- an already-resolved decision from the issue #25
+# Phase 2 plan comment: the source Blender rig only has ONE actuated DOF per
+# leg, a keyframed knee-knuckle counter-rotation cancels net rotation on the
+# lower leg/wheel subtree in the Blender ANIMATION, but that cancellation is
+# not reproduced here -- this static world has no controller to drive it),
+# plus one continuous wheel HingeJoint per leg (axis 1 0 0, the real
+# independently-actuated STS3032 wheel-drive DOF) nested inside the
+# lower-leg's endPoint Solid. See export_legged_robot_to_webots.py's
+# docstring for the full per-body mesh-split rationale and the empirical
+# axis-mapping verification (both halves of the architect's flagged "CRITICAL
+# axis check").
+#
+# Axis note: HingeJoint.axis is 1 0 0 for BOTH the hip and wheel joints --
+# verified, not assumed. The source rig's hip rotation is
+# hip_servo/upper_plate.rotation_euler.x (local/world X, since base_plate
+# has identity rotation) and the wheel's spin axis works out to local X too
+# (see kf_wheel_spin()'s own docstring in the model script). The exporter
+# was deliberately changed from pendulum's forward_axis='NEGATIVE_Z'/
+# up_axis='Y' to forward_axis='Y'/up_axis='Z' (confirmed empirically to be
+# an IDENTITY mapping, OBJ xyz == Blender xyz exactly) specifically so X
+# stays X with zero risk of a silent swap, and so the mesh's "up" (Blender
+# Z) lands on Webots' own vertical axis -- this Webots R2025a install's
+# WorldInfo default coordinateSystem is "ENU" (Z-up; confirmed by reading
+# /usr/local/webots/resources/nodes/WorldInfo.wrl directly), NOT the Y-up
+# convention pendulum_world.wbt's own comment assumed.
+#
+# Joint reference pose: every endPoint Solid's mesh was exported at
+# "hip angle = 0" (see the exporter's pivot-recentering section), so each
+# HingeJointParameters.position below is set to the real DEFAULT_HIP_ANGLE_DEG
+# rest-stance angle (converted to radians, from
+# orchestration/linkage_kinematics.py -- single source of truth, not
+# re-derived) rather than 0, and Webots applies that rotation on load.
+#
+# PEA spring (issue #25 Phase 1 Task 4 / Phase 2 plan): the source model's
+# build_pea_spring() is explicitly a VISUAL-ONLY placeholder mesh (no
+# Blender spring/soft-body constraint) and is deliberately NOT exported to
+# OBJ here -- the real target, per the Phase 2 plan, is
+# HingeJointParameters.springConstant on each hip hinge, set to
+# 0.1329 N*m/rad from linkage_kinematics.pea_spring_constant_n_m_per_rad().
+# dampingConstant is left at Webots' own default (0) -- no damping figure
+# exists anywhere in this repo to reuse, and the plan only specifies a
+# number for the spring constant itself.
+#
+# STS3032 "driver" (Phase 2 scope, per the plan): represented only as
+# RotationalMotor.maxTorque/maxVelocity parameters, NOT a serial-bus driver
+# class (no controller exists yet to use one -- deferred to Phase 3+).
+# maxTorque = 0.4413 N*m, reused verbatim from
+# orchestration/feasibility_phase0.py's STALL_TORQUE_N_M (4.5 kgf-cm @ 6V
+# stall, not recomputed here). maxVelocity has NO existing number anywhere
+# in this repo to reuse (feasibility_phase0.py only ever captured torque) --
+# it is a first-use, low-confidence PLACEHOLDER here (~6.5 rad/s, from a
+# commonly-cited-but-NOT-independently-verified-in-this-offline-environment
+# STS3032-class "0.16 s/60 deg @ 6V" no-load-speed figure), flagged the same
+# way this repo already flags its other non-final numbers (e.g.
+# linkage_kinematics.py's MECHANICAL_ADVANTAGE_MIN_RATIO) rather than
+# presented as sourced fact.
+#
+# boundingObject fidelity: coarse per-part boxes/cylinder sized from
+# UPPER_LEN_MM/LOWER_LEN_MM/ANKLE_DROP_MM (linkage_kinematics.py) and
+# WHEEL_R_MM (feasibility_phase0.py) -- same placeholder-fidelity posture as
+# pendulum_world.wbt's own chassis-plate-only box, not a real collision
+# hull. Mass values are round placeholders (not a real BOM), same caveat
+# PENDULUM.md and feasibility_phase0.py's own TOTAL_MASS_KG already carry.
+#
+# controller "<none>" throughout -- acceptance bar for Phase 2 is
+# "validated loadable" (webots --batch --mode=fast --minimize --no-rendering
+# exits 0), not a working controller. No controller is written here.
+
+WorldInfo {
+  info [
+    "Dual-wheel legged balancing robot (issue #25 geometry) physics world, Phase 2 (issue #25/#28)."
+  ]
+  basicTimeStep 8
+  contactProperties [
+    ContactProperties {
+      material1 "default"
+      material2 "default"
+      coulombFriction [
+        0.9
+      ]
+    }
+  ]
+}
+
+Viewpoint {
+  orientation -0.30 0.30 0.90 1.05
+  position 0.55 -0.65 0.42
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+RectangleArena {
+  floorSize 2 2
+  floorTileSize 0.5 0.5
+}
+
+DEF LEGGED_ROBOT Robot {
+  translation 0 0 0
+  rotation 0 0 1 0
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.08 0.08 0.09
+        roughness 0.5
+        metalness 0
+      }
+      geometry Mesh {
+        url [
+          "meshes/legged_robot_chassis.obj"
+        ]
+      }
+    }
+    Gyro {
+      name "gyro"
+      translation 0 0 0.021
+    }
+    Accelerometer {
+      name "accelerometer"
+      translation 0 0 0.021
+    }
+    # --- Right leg (sign=+1; hip pivot from
+    # export_legged_robot_to_webots.py's printed pivots, R side) -------------
+    HingeJoint {
+      jointParameters HingeJointParameters {
+        axis 1 0 0
+        anchor 0.05 -0.038 0.02
+        position 1.0122909661567112
+        springConstant 0.1329
+      }
+      device [
+        RotationalMotor {
+          name "hip_motor_R"
+          maxTorque 0.4413
+          maxVelocity 6.5
+        }
+      ]
+      endPoint Solid {
+        translation 0.05 -0.038 0.02
+        rotation 0 0 1 0
+        name "upper_link_R"
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.05 0.05 0.055
+              roughness 0.55
+              metalness 0
+            }
+            geometry Mesh {
+              url [
+                "meshes/legged_robot_upper_link_R.obj"
+              ]
+            }
+          }
+          # Rigid (non-Joint) lower-leg subtree -- no second HingeJoint for
+          # the knee, per the issue #25 Phase 2 plan's already-resolved
+          # decision. translation is the knee pivot expressed in this
+          # Solid's own local frame (hip-relative).
+          Solid {
+            translation 0.0 0.0035 -0.04
+            rotation 0 0 1 0
+            name "lower_link_R"
+            children [
+              Shape {
+                appearance PBRAppearance {
+                  baseColor 0.35 0.35 0.4
+                  roughness 0.5
+                  metalness 0.2
+                }
+                geometry Mesh {
+                  url [
+                    "meshes/legged_robot_lower_link_R.obj"
+                  ]
+                }
+              }
+              HingeJoint {
+                jointParameters HingeJointParameters {
+                  axis 1 0 0
+                  anchor 0.022 0.0 -0.04
+                }
+                device [
+                  RotationalMotor {
+                    name "wheel_motor_R"
+                    maxTorque 0.4413
+                    maxVelocity 6.5
+                  }
+                ]
+                endPoint Solid {
+                  translation 0.022 0.0 -0.04
+                  rotation 0 0 1 0
+                  name "wheel_R"
+                  children [
+                    Shape {
+                      appearance PBRAppearance {
+                        baseColor 0.02 0.02 0.02
+                        roughness 0.6
+                        metalness 0
+                      }
+                      geometry Mesh {
+                        url [
+                          "meshes/legged_robot_wheel_R.obj"
+                        ]
+                      }
+                    }
+                  ]
+                  boundingObject Transform {
+                    rotation 0 1 0 1.5708
+                    children [
+                      Cylinder {
+                        radius 0.04
+                        height 0.016
+                      }
+                    ]
+                  }
+                  physics Physics {
+                    density -1
+                    mass 0.01
+                  }
+                }
+              }
+            ]
+            boundingObject Transform {
+              translation 0.0 0.0 -0.02
+              children [
+                Box {
+                  size 0.02 0.02 0.04
+                }
+              ]
+            }
+            physics Physics {
+              density -1
+              mass 0.02
+            }
+          }
+        ]
+        boundingObject Transform {
+          translation 0.0 0.0018 -0.02
+          children [
+            Box {
+              size 0.02 0.015 0.04
+            }
+          ]
+        }
+        physics Physics {
+          density -1
+          mass 0.02
+        }
+      }
+    }
+    # --- Left leg (sign=-1; mirrored X) --------------------------------------
+    HingeJoint {
+      jointParameters HingeJointParameters {
+        axis 1 0 0
+        anchor -0.05 -0.038 0.02
+        position 1.0122909661567112
+        springConstant 0.1329
+      }
+      device [
+        RotationalMotor {
+          name "hip_motor_L"
+          maxTorque 0.4413
+          maxVelocity 6.5
+        }
+      ]
+      endPoint Solid {
+        translation -0.05 -0.038 0.02
+        rotation 0 0 1 0
+        name "upper_link_L"
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.05 0.05 0.055
+              roughness 0.55
+              metalness 0
+            }
+            geometry Mesh {
+              url [
+                "meshes/legged_robot_upper_link_L.obj"
+              ]
+            }
+          }
+          Solid {
+            translation 0.0 0.0035 -0.04
+            rotation 0 0 1 0
+            name "lower_link_L"
+            children [
+              Shape {
+                appearance PBRAppearance {
+                  baseColor 0.35 0.35 0.4
+                  roughness 0.5
+                  metalness 0.2
+                }
+                geometry Mesh {
+                  url [
+                    "meshes/legged_robot_lower_link_L.obj"
+                  ]
+                }
+              }
+              HingeJoint {
+                jointParameters HingeJointParameters {
+                  axis 1 0 0
+                  anchor -0.022 0.0 -0.04
+                }
+                device [
+                  RotationalMotor {
+                    name "wheel_motor_L"
+                    maxTorque 0.4413
+                    maxVelocity 6.5
+                  }
+                ]
+                endPoint Solid {
+                  translation -0.022 0.0 -0.04
+                  rotation 0 0 1 0
+                  name "wheel_L"
+                  children [
+                    Shape {
+                      appearance PBRAppearance {
+                        baseColor 0.02 0.02 0.02
+                        roughness 0.6
+                        metalness 0
+                      }
+                      geometry Mesh {
+                        url [
+                          "meshes/legged_robot_wheel_L.obj"
+                        ]
+                      }
+                    }
+                  ]
+                  boundingObject Transform {
+                    rotation 0 1 0 1.5708
+                    children [
+                      Cylinder {
+                        radius 0.04
+                        height 0.016
+                      }
+                    ]
+                  }
+                  physics Physics {
+                    density -1
+                    mass 0.01
+                  }
+                }
+              }
+            ]
+            boundingObject Transform {
+              translation 0.0 0.0 -0.02
+              children [
+                Box {
+                  size 0.02 0.02 0.04
+                }
+              ]
+            }
+            physics Physics {
+              density -1
+              mass 0.02
+            }
+          }
+        ]
+        boundingObject Transform {
+          translation 0.0 0.0018 -0.02
+          children [
+            Box {
+              size 0.02 0.015 0.04
+            }
+          ]
+        }
+        physics Physics {
+          density -1
+          mass 0.02
+        }
+      }
+    }
+  ]
+  name "legged_robot"
+  # Coarse placeholder bounding box centered on the base plate footprint
+  # (BASE_W_MM x BASE_L_MM x BASE_T_MM from feasibility_phase0.py, mm -> m),
+  # same placeholder-fidelity posture as pendulum_world.wbt's own chassis
+  # box -- not a full hull of the rear extension/deck/battery/ATOM stack.
+  boundingObject Transform {
+    translation 0 0 0.0015
+    children [
+      Box {
+        size 0.09 0.07 0.003
+      }
+    ]
+  }
+  physics Physics {
+    density -1
+    mass 0.15
+  }
+  controller "<none>"
+}
