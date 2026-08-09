@@ -1,45 +1,43 @@
 # GitHub Copilot Instructions
 
-This mirrors [AGENTS.md](../AGENTS.md) and [CLAUDE.md](../CLAUDE.md) — read
-those for the full picture; this file is the Copilot-facing trim (Copilot
-does not read CLAUDE.md). Keep the three in sync by hand when the MCP tools
-or workflow change.
+Mirrors [AGENTS.md](../AGENTS.md) and [CLAUDE.md](../CLAUDE.md) — read those
+for the full picture; this is the Copilot-facing trim (Copilot doesn't read
+CLAUDE.md). Keep the three in sync by hand when MCP tools/workflow change.
+Path-specific rules already live in
+[.github/instructions/*.instructions.md](instructions/) (real Copilot
+`applyTo:` frontmatter) — check there before adding blanket rules here.
 
 ## Project layout
 
-- `blender-mcp/` — FastMCP server exposing Blender to agents. Change only
-  when the tool interface itself needs to change.
-  - `addon/mcp_bridge_addon.py` — Blender addon: TCP bridge into a live,
-    already-open Blender GUI session.
-- `blender-project/scripts/` — generative Python automations (day-to-day
-  modeling/rendering work happens here).
-- `blender-project/renders/` — pipeline output (`.blend` files, preview
-  PNGs). Build artifacts — regenerate via scripts, don't hand-edit.
+- `blender-mcp/` — FastMCP server exposing Blender to agents (change only
+  when the tool interface changes); `addon/mcp_bridge_addon.py` is the TCP
+  bridge into a live, already-open Blender GUI session.
+- `blender-project/scripts/` — day-to-day modeling/rendering automations.
+- `blender-project/renders/` — pipeline output (`.blend`, preview PNGs);
+  build artifacts, regenerate via scripts, don't hand-edit.
 
 ## MCP tools (`blender-local-agent`)
 
 Three tools, not interchangeable:
 
-- `run_blender_python` — default. Disposable, headless `blender --background`
-  process per call. Never touches a window the user has open.
-- `check_blender_live_status` — cheap reachability probe for a live Blender
-  GUI instance running the MCP Live Bridge addon. Call before
+- `run_blender_python` — default; disposable, headless `blender
+  --background` process per call, never touches an open window.
+- `check_blender_live_status` — cheap reachability probe for a live GUI
+  instance running the MCP Live Bridge addon; call before
   `run_blender_python_live` to avoid a blind timeout.
-- `run_blender_python_live` — runs Python inside an **already-open** Blender
-  GUI session via the bridge addon. Mutates the user's real open scene.
-  Requires the addon enabled and Blender running interactively — it depends
-  on `bpy.app.timers`, which does not tick under `--background`.
+- `run_blender_python_live` — runs Python inside an **already-open**
+  Blender GUI session via the bridge addon; mutates the user's real open
+  scene. Requires the addon enabled and Blender running interactively —
+  depends on `bpy.app.timers`, which doesn't tick under `--background`.
 
 ## Workflow
 
-1. Write or iterate a script in `blender-project/scripts/`. Every script
+1. Write or iterate a script in `blender-project/scripts/`; every script
    must `import bpy`.
-2. Execute via the MCP tool above — `run_blender_python` for the normal
-   headless case, `run_blender_python_live` only when the task specifically
-   needs to act on an open Blender window.
-3. Verify output landed in `blender-project/renders/` before calling a task
-   complete — exit code 0 alone doesn't mean the expected `.blend`/PNG
-   exists.
+2. Execute via the MCP tool above — `run_blender_python` normally,
+   `run_blender_python_live` only for an open Blender window.
+3. Verify output landed in `blender-project/renders/` before calling a
+   task complete — exit 0 doesn't guarantee the `.blend`/PNG exists.
 
 ## Naming conventions
 
@@ -49,39 +47,33 @@ with a `_precise` suffix for higher-fidelity variants. See
 
 ## Branching / isolation policy
 
-Default to a plain branch off `main`. Reserve `git worktree` for tasks that
-genuinely run concurrently against different branches at the same time, or
-when a human explicitly asks for worktree isolation — not as a default.
+Default to a plain branch off `main`; reserve `git worktree` for genuinely
+concurrent work or an explicit human request, not by default.
 `blender-project/renders/*.blend` files are binary (0.5–1.3MB each), so
-every worktree duplicates them on disk, and worktrees/branches aren't
-reliably auto-cleaned once written to (see issue #48: 3 merged worktrees +
-4 dangling branches found unpruned, plus a near-miss where an uncommitted
-`.blend` produced inside a worktree nearly got silently discarded by
-`git worktree remove`). If a worktree task produces a build artifact that
-isn't purely reproducible by re-running its script, commit it — or flag
-explicitly that it's uncommitted and why — before the worktree is removed.
+every worktree duplicates them, and worktrees/branches aren't reliably
+auto-cleaned (issue #48: 3 merged worktrees + 4 dangling branches found
+unpruned, plus a near-miss where an uncommitted `.blend` in a worktree
+nearly got silently discarded by `git worktree remove`). Commit — or flag
+explicitly as uncommitted and why — any non-reproducible build artifact a
+worktree produces before removing it.
 
 ## Environment
 
-- KDE Wayland on Debian 13. A script needing a visible UI window must pass
-  through the Wayland environment variables explicitly.
-- No linter/formatter/test suite is configured in this repo (no
-  `black`/`flake8`/`pytest` installed) — don't invent build/lint gates that
-  aren't actually wired up.
+KDE Wayland on Debian 13 (visible-UI scripts need explicit Wayland env
+vars, don't assume X11); no linter/formatter/test suite configured (no
+`black`/`flake8`/`pytest`) — don't invent build/lint gates that aren't
+actually wired up.
 
 ## Security
 
-- `run_blender_python` executes arbitrary Python with full `bpy` access and
-  inherits the host environment — see [SECURITY.md](../SECURITY.md) before
-  running scripts from untrusted sources.
-- `run_blender_python_live` carries the same risk against a live session
-  instead of a disposable one — a bad script there can corrupt scene state
-  the user is actively working on.
-- `.claude/settings.json` (Claude Code side) blocks `rm -rf` / `git reset
-  --hard` / `git push --force` via a `PreToolUse` hook; there is no
-  Copilot-side equivalent enforcement mechanism today.
-- If a task explicitly requests the live/interactive MCP path and a
-  technical limitation forces a fallback to headless `run_blender_python`,
-  say so explicitly in the PR description, commit message, or issue
-  comment — don't substitute silently. Live-mode was a stated requirement,
-  not an implementation detail left to the agent's discretion.
+- `run_blender_python` runs arbitrary Python with full `bpy`/host access —
+  see [SECURITY.md](../SECURITY.md) before untrusted scripts.
+  `run_blender_python_live` carries the same risk against the user's live
+  scene, not a disposable one, and can corrupt state they're working on.
+- `.claude/settings.json` (Claude Code) blocks `rm -rf` / `git reset --hard`
+  / `git push --force` via a `PreToolUse` hook; no Copilot-side equivalent
+  exists today.
+- If a task requests the live/interactive MCP path and a technical
+  limitation forces a headless fallback, say so explicitly (PR/commit/issue
+  comment) — never substitute silently; it's a stated requirement, not an
+  implementation detail.

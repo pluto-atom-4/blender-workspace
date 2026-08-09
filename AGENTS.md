@@ -6,34 +6,20 @@ file restates them tool-agnostically. Copilot reads
 [.github/copilot-instructions.md](.github/copilot-instructions.md), a
 manually-synced trim of this file.
 
-Tool permissions and safety hooks: [.claude/settings.json](.claude/settings.json)
+Tool permissions/safety hooks: [.claude/settings.json](.claude/settings.json)
 (committed) + `.claude/settings.local.json` (personal, gitignored) — includes
 the `PreToolUse` hook blocking destructive Bash commands.
 
 ## Agent Roles
 
-### Architect/Planner
-- Draft implementation plans (tasks.md)
-- Design module boundaries + APIs
-- Write architectural decisions
-- ✅ Read codebase, write tasks.md + docs/
-- ❌ FORBIDDEN: Write production code
+Authoritative role details: `.claude/agents/architect.md`,
+`.claude/agents/coder.md`, `.claude/agents/reviewer.md`. Summary only:
 
-### Coder/Implementer
-- Implement features, write tests
-- Create commits
-- Flag design issues to Architect
-- ✅ Write src/, tests/, run tests
-- ❌ FORBIDDEN: Modify tasks.md, CLAUDE.md, AGENTS.md, skip tests
-
-### Reviewer/Tester
-- Verify implementation vs tasks.md
-- Run full test suite (pytest, coverage, lint)
-- Check test coverage, code quality
-- ✅ Read codebase, run verification commands
-- ❌ FORBIDDEN: Modify production code, merge without human approval
-
----
+| Role | Can | Forbidden |
+|---|---|---|
+| Architect | Read code; write tasks.md/docs/ | Write production code |
+| Coder | Write src/, tests/; commit | Edit tasks.md, CLAUDE.md, AGENTS.md; skip tests |
+| Reviewer | Read code; run verification | Edit production code; merge w/o approval |
 
 ## Handover Protocol
 
@@ -43,16 +29,12 @@ ARCHITECT → CODER → REVIEWER → HUMAN (merge)
 
 **Approval gates:** Gate 1 (plan) before code → Gate 2 (verification) before merge
 
----
-
 ## Branching / isolation policy
 
 Default to a plain branch (`git checkout -b <name>` off `main`). Use
 `git worktree` only for genuinely concurrent multi-agent work or an
 explicit human request — not by default. Rationale + cleanup pitfalls:
 issue #48.
-
----
 
 ## Project layout
 
@@ -92,18 +74,18 @@ not an implementation detail left to the agent's discretion.
 
 - KDE Wayland, Debian 13. A visible-UI script must pass Wayland env vars
   explicitly — don't assume X11.
-- `run_blender_python` runs arbitrary Python with full `bpy` access and the
-  host environment — see [SECURITY.md](SECURITY.md) for untrusted sources.
-  `run_blender_python_live` carries the same risk against a live session
-  instead of a disposable one — a bad script there can corrupt scene state
-  the user is actively working on.
+- `run_blender_python` runs arbitrary Python with full `bpy`/host access —
+  see [SECURITY.md](SECURITY.md). `run_blender_python_live` carries the same
+  risk against the user's live scene, not a disposable one.
+- No linter/formatter/test suite is configured (no `black`/`flake8`/`pytest`
+  installed) — don't assume `wc -l`/`jq`/build gates exist beyond what's
+  wired up in `.github/workflows/`.
 
 ## Project skills
 
 Claude Code auto-discovers `.claude/skills/<name>/SKILL.md` (name +
-description frontmatter). `.claude/skills/render-multi-angle/SKILL.md`
-documents the default/front/side/top render pattern from
-[SKILLS.md](SKILLS.md) — add new skills there as the inventory grows.
+description frontmatter) — see [SKILLS.md](SKILLS.md) for the current
+inventory.
 
 ## Naming conventions
 
