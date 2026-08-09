@@ -122,6 +122,7 @@ save_as_mainfile.
 """
 
 import bpy
+import json
 import os
 import sys
 
@@ -308,6 +309,25 @@ if bpy.app.background:
     for side, p in pivots_m.items():
         print(f"  {side}: hip={p['hip']}  knee={p['knee']}  wheel={p['wheel']}")
     print("=" * 70)
+
+    # Machine-readable pivot manifest (issue #54): the anchor/translation
+    # fields legged_robot_world.wbt hand-transcribes from the printout above
+    # have nothing forcing them to stay in sync with a re-export -- this
+    # gives orchestration/legged_robot_pivot_drift.py something to check
+    # against instead of relying on eyeballing the stdout block.
+    PIVOT_MANIFEST_PATH = os.path.join(MESH_DIR, "legged_robot_pivots.json")
+    manifest = {
+        "schema_version": 1,
+        "units": "m",
+        "generated_by": "export_legged_robot_to_webots.py",
+        "source_frame": 90,
+        "pivots": pivots_m,
+    }
+    with open(PIVOT_MANIFEST_PATH, "w") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+    print(f"Wrote pivot manifest: {PIVOT_MANIFEST_PATH}")
+
     print("Exported dual-wheel legged robot meshes for Webots (issue #25 Phase 2).")
 else:
     print("Skipped mesh export -- not running headless (bpy.app.background is False); "
