@@ -8,17 +8,28 @@ by blender-project/physics/worlds/pendulum_world.wbt's Mesh node (Webots'
 Mesh node supports DAE/STL/OBJ/FBX -- see
 /usr/local/webots/resources/nodes/Mesh.wrl).
 
-NOTE on format: the original plan called for bpy.ops.wm.collada_export
-(.dae). This system's Blender package (Debian's blender 4.3.2+dfsg) does
-not ship the Collada exporter -- io_scene_dae isn't bundled/enabled in the
-"+dfsg" build (verified: bpy.ops.wm.collada_export raises "operator ...
-could not be found"; bpy.ops.wm only exposes obj_export/ply_export/
-stl_export, and bpy.ops.export_scene only fbx/gltf). OBJ is the closest
-available equivalent Webots' Mesh node also accepts, so this exports OBJ
-instead. global_scale=0.001 converts the model's millimeter-scale Blender
-units (scale_length=0.001 per model_pendulum.py) to Webots' meters; the
-exporter's default forward_axis='NEGATIVE_Z'/up_axis='Y' already matches
-Webots' Y-up convention, so no extra rotation is needed in the world file.
+NOTE on format and axis convention (issue #52): the original plan called for
+bpy.ops.wm.collada_export (.dae). This system's Blender package (Debian's
+blender 4.3.2+dfsg) does not ship the Collada exporter -- io_scene_dae isn't
+bundled/enabled in the "+dfsg" build (verified: bpy.ops.wm.collada_export
+raises "operator ... could not be found"; bpy.ops.wm only exposes
+obj_export/ply_export/stl_export, and bpy.ops.export_scene only fbx/gltf).
+OBJ is the closest available equivalent Webots' Mesh node also accepts, so
+this exports OBJ instead. global_scale=0.001 converts the model's
+millimeter-scale Blender units (scale_length=0.001 per model_pendulum.py) to
+Webots' meters.
+
+Axis convention: Webots R2025a's real WorldInfo.coordinateSystem default is
+"ENU" (confirmed by reading /usr/local/webots/resources/nodes/WorldInfo.wrl:
+`w3dField SFString{"ENU","NUE","EUN"} coordinateSystem "ENU"`) -- Z is
+vertical (up), not Y. An early version of this exporter used
+forward_axis='NEGATIVE_Z'/up_axis='Y' (issue #52 identified this was wrong).
+This script now exports with forward_axis='Y'/up_axis='Z', which produces an
+IDENTITY mapping (OBJ xyz == Blender xyz exactly, just scaled), verified
+empirically via the same test-box method export_legged_robot_to_webots.py
+documents in its own module docstring. This identity mapping matches Blender's
+own X/Y/Z 1:1 to Webots' ENU (Z-up) default, so no extra rotation is needed in
+the world file.
 
 Headless -- run via run_blender_python. The export only runs when
 bpy.app.background is true (same guard model_pendulum.py uses for
@@ -50,8 +61,8 @@ if bpy.app.background:
         filepath=OUTPUT_MESH,
         export_selected_objects=True,
         global_scale=0.001,  # mm (this model's units) -> m (Webots' units)
-        forward_axis='NEGATIVE_Z',
-        up_axis='Y',
+        forward_axis='Y',
+        up_axis='Z',
         export_materials=True,
     )
     print(f"Exported pendulum mesh for Webots: {OUTPUT_MESH}")
