@@ -25,6 +25,10 @@ blender-project/    Operational workspace -- see blender-project/README.md
   orchestration/     Standalone uv subproject: Webots export + LQR tuning
   physics/           Webots world file and exported mesh assets
   assets/            Reference images / source assets used by scripts
+
+ursina-prim-maze-creation/  Standalone uv subproject: Real-time 3D animated
+                     Prim's Algorithm maze generation on Ursina Engine
+                     (zero Blender deps; own venv/lockfile)
 ```
 
 ## Requirements
