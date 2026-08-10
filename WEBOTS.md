@@ -66,6 +66,51 @@ guard `model_pendulum.py` itself uses for `save_as_mainfile`), so running
 this script against a live GUI session by mistake is a no-op rather than a
 silent overwrite.
 
+## Units convention (read before writing a new exporter)
+
+Two incompatible per-model unit conventions coexist in this repo. Nothing
+enforces which one a given `model_<subject>.py` uses -- picking the wrong
+`global_scale` in a new `export_<subject>_to_webots.py` silently produces a
+mesh scaled by 1000x in one direction or the other (see issue #53). Check
+which convention your source model script uses before writing a new
+exporter:
+
+- **`model_pendulum.py`'s convention:** raw millimeter numbers are stored
+  directly as Blender units (e.g. `CHASSIS_WIDTH = 60.0` means 60 Blender
+  units). `scene.unit_settings.scale_length = 0.001` is set purely so the
+  Blender UI *displays* those units as millimeters -- it has no effect on
+  the actual stored coordinate values or on `bpy.ops.wm.obj_export`.
+  Exporters for models built this way need **`global_scale=0.001`** to
+  convert Blender's raw (millimeter-valued) units down to Webots' meters.
+  `export_pendulum_to_webots.py` uses this value.
+
+- **`model_dual_wheel_legged_robot.py` / `model_dual_wheel_legged_robot_precise.py`'s
+  convention (via `_model_common.py`'s `mm()`/`MM = 0.001` helper):** every
+  millimeter input is multiplied by `0.001` (divided by 1000) *before* it is
+  ever stored as a Blender coordinate, so this scene's raw Blender units are
+  already real meters -- there is no separate mm-only "storage" step. Nothing
+  needs converting: exporters for models built this way need
+  **`global_scale=1.0`**. `export_legged_robot_to_webots.py` uses this value
+  (see that file's own module docstring for the empirical ~1000x-too-small
+  symptom this caused when first written).
+
+**Checklist for a new `export_<subject>_to_webots.py`:**
+
+1. Open the source `model_<subject>.py` and check whether raw millimeter
+   literals are stored as coordinates directly (convention A, needs
+   `global_scale=0.001`) or pre-divided by a helper like `_model_common.py`'s
+   `mm()` before storage (convention B, needs `global_scale=1.0`). Grep for
+   `scale_length` and for any shared `mm()`/`MM =` helper import to tell
+   them apart quickly.
+2. Do not assume -- **verify with a quick test export and measurement**:
+   export one object with a known real-world dimension, re-import or inspect
+   the resulting `.obj` vertex spread, and confirm it lands in the expected
+   meter range for Webots (a robot chassis should measure centimeters, not
+   sub-millimeters or kilometers). A ~1000x error in either direction is the
+   signature of picking the wrong `global_scale` for the model's convention.
+3. If a third, new unit convention is introduced by a future model script,
+   add it as a third bullet above rather than letting it go undocumented.
+
 ## Webots world file
 
 `blender-project/physics/worlds/pendulum_world.wbt` is a minimal but real,
