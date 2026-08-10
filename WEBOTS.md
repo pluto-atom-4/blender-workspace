@@ -53,9 +53,13 @@ Webots' `Mesh` node accepts OBJ directly (confirmed against
 DAE, STL, OBJ or FBX format"`), so the script exports OBJ instead --
 functionally equivalent for this purpose, just a different container
 format. `global_scale=0.001` in the `obj_export` call converts the model's
-millimeter-scale coordinates to Webots' meters; the exporter's default
-`forward_axis='NEGATIVE_Z'`/`up_axis='Y'` already matches Webots' Y-up
-convention, so no extra rotation is applied in the world file.
+millimeter-scale coordinates to Webots' meters; the exporter uses
+`forward_axis='Y'` and `up_axis='Z'` to produce an identity mapping (OBJ
+xyz == Blender xyz exactly, just scaled), which matches Webots R2025a's real
+`WorldInfo.coordinateSystem` default of `ENU` (Z-up, confirmed by reading
+`/usr/local/webots/resources/nodes/WorldInfo.wrl`), so no extra rotation is
+applied in the world file (see issue #52 for the fix that corrected this
+mapping).
 
 The export only actually runs when `bpy.app.background` is true (same
 guard `model_pendulum.py` itself uses for `save_as_mainfile`), so running

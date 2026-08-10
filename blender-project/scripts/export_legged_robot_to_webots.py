@@ -86,32 +86,32 @@ Axis convention -- the OTHER half of the architect's flagged risk
 flip [the hip axis] before hardcoding HingeJoint.axis values"). Verified
 EMPIRICALLY in this environment (not assumed): exporting a known
 asymmetric test box via bpy.ops.wm.obj_export with
-forward_axis='NEGATIVE_Z'/up_axis='Y' (export_pendulum_to_webots.py's own
-setting) confirmed OBJ_xyz = (Blender_x, Blender_z, -Blender_y) -- Blender
-X is preserved, but Y/Z are swapped/negated. Both this rig's hip rotation
-axis (hip_servo/upper_plate's rotation_euler.x, i.e. local/world X, since
-base_plate has identity rotation) and its wheel axle axis (derived in
-kf_wheel_spin's own docstring: the wheel's "tip" transform sends the spin
-axis to local X too) are along X, so NEITHER axis gets flipped by that
-mapping -- HingeJoint.axis = 1 0 0 would have been correct either way.
-BUT a second, orthogonal problem was found while checking this: Webots
-R2025a's WorldInfo.coordinateSystem default is "ENU" (confirmed by reading
+forward_axis='NEGATIVE_Z'/up_axis='Y' confirmed OBJ_xyz =
+(Blender_x, Blender_z, -Blender_y) -- Blender X is preserved, but Y/Z are
+swapped/negated. Both this rig's hip rotation axis (hip_servo/upper_plate's
+rotation_euler.x, i.e. local/world X, since base_plate has identity
+rotation) and its wheel axle axis (derived in kf_wheel_spin's own docstring:
+the wheel's "tip" transform sends the spin axis to local X too) are along X,
+so NEITHER axis gets flipped by that mapping -- HingeJoint.axis = 1 0 0
+would have been correct either way. BUT a second, orthogonal problem was
+found while checking this: Webots R2025a's WorldInfo.coordinateSystem
+default is "ENU" (confirmed by reading
 /usr/local/webots/resources/nodes/WorldInfo.wrl directly in this
 environment: `w3dField SFString{"ENU","NUE","EUN"} coordinateSystem "ENU"
-# X -> East, Y -> North, Z -> Up`) -- Z is vertical, NOT Y. Under
-up_axis='Y' (pendulum_world.wbt's convention), Blender's vertical (Z) ends
-up as the exported mesh's local Y, which Webots would then treat as a
-HORIZONTAL axis, not vertical -- i.e. pendulum_world.wbt's own mesh is very
-likely oriented sideways relative to gravity today (its Gyro/Accelerometer
-children ARE placed using Z for height, which only makes physical sense if
-Z is vertical -- inconsistent with the mesh's own up_axis='Y' choice). That
-pre-existing mismatch is out of scope to fix here (issue #25 Phase 2, not
-#28 Phase 1), but this script deliberately does NOT repeat it: exporting
-with forward_axis='Y', up_axis='Z' was verified (same empirical test) to
-produce an IDENTITY mapping (OBJ xyz == Blender xyz exactly, just scaled),
-so this export's local axes match Blender's own X/Y/Z 1:1, which in turn
-match Webots' actual ENU (Z-up) default with zero compensating rotation
-needed anywhere in the .wbt.
+# X -> East, Y -> North, Z -> Up`) -- Z is vertical, NOT Y. An early
+version of export_pendulum_to_webots.py used up_axis='Y', which would have
+meant Blender's vertical (Z) ends up as the exported mesh's local Y, which
+Webots would then treat as a HORIZONTAL axis, not vertical -- meaning that
+mesh would have been oriented sideways relative to gravity (its
+Gyro/Accelerometer children ARE placed using Z for height, which only makes
+physical sense if Z is vertical -- inconsistent with an up_axis='Y' choice).
+Issue #52 corrected that exporter to use forward_axis='Y', up_axis='Z'
+instead, fixing the mesh orientation. This script deliberately uses the same
+correct mapping: exporting with forward_axis='Y', up_axis='Z' was verified
+(same empirical test) to produce an IDENTITY mapping (OBJ xyz == Blender xyz
+exactly, just scaled), so this export's local axes match Blender's own X/Y/Z
+1:1, which in turn match Webots' actual ENU (Z-up) default with zero
+compensating rotation needed anywhere in the .wbt.
 
 Headless -- run via run_blender_python (or `blender --background --python`
 directly if the MCP tool isn't available in the calling environment; note
@@ -244,7 +244,8 @@ if bpy.app.background:
             global_scale=1.0,
             forward_axis='Y',         # identity mapping -- see module docstring's
             up_axis='Z',              # "Axis convention" section for why NOT
-                                       # pendulum's NEGATIVE_Z/Y here.
+                                       # export_pendulum_to_webots.py's old
+                                       # NEGATIVE_Z/Y setting.
             export_materials=True,
         )
         print(f"Exported: {filepath} ({len(names)} objects)")
