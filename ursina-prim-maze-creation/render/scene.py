@@ -2,6 +2,7 @@
 
 from ursina import Ursina, Entity, camera, color
 import time
+import __main__
 
 from maze.prims import prims_maze_generator, StepKind
 
@@ -9,11 +10,32 @@ from maze.prims import prims_maze_generator, StepKind
 WIDTH = 31  # Maze width (must be odd)
 HEIGHT = 31  # Maze height (must be odd)
 ANIMATION_SPEED = 0.05  # Seconds between animation steps
+START_CELL = (1, 1)  # Expose start coordinate for visual initialization
 
 # Module-level state for the update loop
 _maze_gen = None
 _grid_entities = {}
 _timer = 0.0
+
+
+def update():
+    """Ursina update function called every frame. Process maze generation steps."""
+    global _timer, _maze_gen
+    if _maze_gen is None:
+        return
+
+    _timer += time.dt
+
+    # Process maze generation steps at controlled rate
+    while _timer >= ANIMATION_SPEED:
+        _timer -= ANIMATION_SPEED
+        try:
+            step = next(_maze_gen)
+            _process_step(step)
+        except StopIteration:
+            # Maze generation complete
+            _maze_gen = None
+            break
 
 
 def run():
@@ -38,38 +60,21 @@ def run():
             )
             _grid_entities[(x, z)] = entity
 
+    # Initialize start cell to carved visual state (dark gray, lowered position)
+    start_x, start_z = START_CELL
+    if (start_x, start_z) in _grid_entities:
+        start_entity = _grid_entities[(start_x, start_z)]
+        start_entity.color = color.dark_gray
+        start_entity.position = (start_x, -0.5, start_z)
+
     # Set up isometric camera
     camera.position = (WIDTH // 2, WIDTH, -HEIGHT // 2)
     camera.rotation_x = 60
     camera.rotation_y = 30
 
-    # Register update function with Ursina
-    def update():
-        global _timer, _maze_gen
-        if _maze_gen is None:
-            return
-
-        _timer += time.dt()
-
-        # Process maze generation steps at controlled rate
-        while _timer >= ANIMATION_SPEED:
-            _timer -= ANIMATION_SPEED
-            try:
-                step = next(_maze_gen)
-                _process_step(step)
-            except StopIteration:
-                # Maze generation complete
-                _maze_gen = None
-                break
-
-    # Ursina automatically picks up a module-level update() function
-    # But we need to bind it properly. Let's use the ursina pattern:
-    # We'll create a closure that Ursina can call via instance method
-    import ursina as ursina_module
-
-    # Actually, Ursina looks for a module-level update() function
-    # Let's just set it in the global namespace of this module
-    globals()["update"] = update
+    # Register update function with __main__ module globals
+    # Ursina's _update() task looks for update() in __main__ module
+    __main__.update = update
 
     # Run the application
     app.run()
