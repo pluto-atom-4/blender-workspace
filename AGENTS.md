@@ -61,6 +61,10 @@ so explicitly in the PR description, commit message, or issue comment —
 don't substitute silently. The live-mode request is a stated requirement,
 not an implementation detail left to the agent's discretion.
 
+**Tool access:** Only the **coder** subagent has `run_blender_python` and
+`check_blender_live_status` in its `tools:` frontmatter; `architect` and
+`reviewer` intentionally exclude them to preserve their read-only guarantees.
+
 ## Workflow
 
 1. Write/iterate a script in `blender-project/scripts/`. Must `import bpy`.

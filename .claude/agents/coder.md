@@ -8,6 +8,8 @@ tools:
   - Grep
   - Glob
   - Bash
+  - mcp__blender-local-agent__run_blender_python
+  - mcp__blender-local-agent__check_blender_live_status
 permissions:
   write:
     deny: ["AGENTS.md", "CLAUDE.md", ".claude/agents/**", ".claude/rules/**", ".claude/skills/**", ".claude/settings.json"] # Prevent governance file modification
