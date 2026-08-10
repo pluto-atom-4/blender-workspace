@@ -1,15 +1,15 @@
 {
-  "timestamp": "2026-08-07T14:56:40.077304",
+  "timestamp": "2026-08-09T14:44:27.753956",
   "files": [
     {
       "path": "CLAUDE.md",
-      "lines": 31,
-      "chars": 2886,
-      "tokens_estimated": 721,
+      "lines": 14,
+      "chars": 1131,
+      "tokens_estimated": 282,
       "budget": 1500,
       "status": "compliant",
-      "percent_of_budget": 48.06666666666667,
-      "last_modified": "2026-08-06T14:49:21.213725"
+      "percent_of_budget": 18.8,
+      "last_modified": "2026-08-09T14:40:50.993494"
     },
     {
       "path": "DESIGN.md",
@@ -23,23 +23,23 @@
     },
     {
       "path": "AGENTS.md",
-      "lines": 112,
-      "chars": 4299,
-      "tokens_estimated": 1074,
+      "lines": 94,
+      "chars": 3979,
+      "tokens_estimated": 994,
       "budget": 1000,
-      "status": "warning",
-      "percent_of_budget": 107.4,
-      "last_modified": "2026-08-07T14:56:35.762120"
+      "status": "compliant",
+      "percent_of_budget": 99.4,
+      "last_modified": "2026-08-09T14:40:44.489462"
     },
     {
       "path": ".github/copilot-instructions.md",
-      "lines": 87,
-      "chars": 4249,
-      "tokens_estimated": 1062,
+      "lines": 79,
+      "chars": 3738,
+      "tokens_estimated": 934,
       "budget": 1000,
-      "status": "warning",
-      "percent_of_budget": 106.2,
-      "last_modified": "2026-08-07T14:45:08.006710"
+      "status": "compliant",
+      "percent_of_budget": 93.4,
+      "last_modified": "2026-08-09T14:42:14.005906"
     },
     {
       "path": ".claude/skills/pre-commit-enforce/SKILL.md",
@@ -64,16 +64,13 @@
   ],
   "summary": {
     "total_files": 6,
-    "compliant": 2,
-    "warnings": 2,
+    "compliant": 4,
+    "warnings": 0,
     "over_budget": 0,
-    "total_tokens": 5704,
+    "total_tokens": 5057,
     "total_budget": 6500,
-    "utilization_percent": 67.6
+    "utilization_percent": 57.6
   },
-  "warnings": [
-    "AGENTS.md: 107% of budget",
-    ".github/copilot-instructions.md: 106% of budget"
-  ],
+  "warnings": [],
   "errors": []
 }
