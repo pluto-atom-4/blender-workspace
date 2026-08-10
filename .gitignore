@@ -31,6 +31,7 @@ blender-project/work/
 
 gh-issue*.*
 issue*.json
+tasks.md
 
 chore-idea.md
 feat-idea.md
