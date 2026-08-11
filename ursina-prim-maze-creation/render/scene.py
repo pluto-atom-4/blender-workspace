@@ -4,10 +4,12 @@ import math
 import time
 import __main__
 
-from ursina import Ursina, Entity, camera, color, Vec3
-from ursina.shaders import basic_lighting_shader
+from ursina import Ursina, Entity, camera, Vec3
 
 from maze.prims import prims_maze_generator, StepKind
+from render.settings import settings
+from render.shaders import dynamic_lighting_shader, _light_dir_from_angles
+from render import ui_panel
 
 # Configuration: tune these to control maze size and animation speed
 WIDTH = 31  # Maze width (must be odd)
@@ -15,23 +17,27 @@ HEIGHT = 31  # Maze height (must be odd)
 ANIMATION_SPEED = 0.05  # Seconds between animation steps
 START_CELL = (1, 1)  # Expose start coordinate for visual initialization
 
-# Color scheme: 3D depth via hue differentiation + height + lighting
-WALL_COLOR = color.hsv(225, 0.45, 0.55)    # slate blue — unvisited walls (raised)
-PATH_COLOR = color.hsv(35, 0.55, 0.85)     # warm sand — carved paths (lowered)
-FRONTIER_COLOR = color.orange               # transient generation state
-CURRENT_COLOR = color.green                 # transient generation state
-
 # Camera framing constants
 CAMERA_MARGIN = 1.15  # headroom so maze edges aren't flush with viewport edges
 CELL_Y_EXTENT = 1.0   # cube half-extent (0.5) + travel between wall/path y (±0.5)
 
+# Camera presets: orthographic and perspective variants
+CAMERA_PRESETS = {
+    "Top-Down": dict(rotation_x=90, rotation_y=0, orthographic=True),
+    "Isometric": dict(rotation_x=60, rotation_y=30, orthographic=True),
+    "Side": dict(rotation_x=10, rotation_y=90, orthographic=True),
+    "First-Person": dict(orthographic=False),  # Special handling in _apply_camera_preset
+}
+
 # Module-level state for the update loop
 _maze_gen = None
 _grid_entities = {}
+_cell_state = {}  # Track each cell's logical role: 'wall'|'path'|'frontier'|'current'
 _timer = 0.0
+_base_camera_position = Vec3(0, 0, 0)  # Stored after preset application
 
 
-def _frame_camera_on_maze(width, height, margin=CAMERA_MARGIN):
+def _frame_camera_on_maze(width, height, margin=CAMERA_MARGIN, rotation_x=60, rotation_y=30, orthographic=True):
     """Position/size an orthographic camera so the full width x height maze
     fits the viewport regardless of maze size or window aspect ratio.
 
@@ -39,10 +45,13 @@ def _frame_camera_on_maze(width, height, margin=CAMERA_MARGIN):
         width: Maze width in cells
         height: Maze height in cells
         margin: Scale factor for headroom (e.g. 1.15 = 15% padding)
+        rotation_x: Camera pitch in degrees (60 = typical isometric)
+        rotation_y: Camera yaw in degrees (30 = typical isometric)
+        orthographic: If True, use orthographic; if False, use perspective (ignored here; caller handles)
     """
-    camera.orthographic = True
-    camera.rotation_x = 60
-    camera.rotation_y = 30
+    camera.orthographic = orthographic
+    camera.rotation_x = rotation_x
+    camera.rotation_y = rotation_y
 
     # Maze center in world space
     center = Vec3((width - 1) / 2, 0, (height - 1) / 2)
@@ -74,6 +83,72 @@ def _frame_camera_on_maze(width, height, margin=CAMERA_MARGIN):
     camera.position = center - forward * distance
 
 
+def _apply_camera_preset(name):
+    """Apply a camera preset and store the base position for offset adjustments.
+
+    Args:
+        name: Preset name (key in CAMERA_PRESETS dict)
+    """
+    if name not in CAMERA_PRESETS:
+        print(f"Unknown preset: {name}, ignoring")
+        return
+
+    settings.camera_preset = name
+    preset = CAMERA_PRESETS[name]
+
+    if name == "First-Person":
+        # First-Person: perspective view near start cell at eye height
+        # Does NOT call _frame_camera_on_maze (intentional - user won't see full maze)
+        camera.orthographic = False
+        camera.fov = 90
+        start_x, start_z = START_CELL
+        camera.position = Vec3(start_x, 0.5, start_z)
+        camera.rotation_x = 0
+        camera.rotation_y = 0
+    else:
+        # Orthographic presets: all use _frame_camera_on_maze with specified rotation
+        _frame_camera_on_maze(
+            WIDTH,
+            HEIGHT,
+            margin=CAMERA_MARGIN,
+            rotation_x=preset["rotation_x"],
+            rotation_y=preset["rotation_y"],
+            orthographic=True,
+        )
+
+    # Store base position and reset offset
+    global _base_camera_position
+    _base_camera_position = Vec3(camera.position)
+    settings.camera_offset = Vec3(0, 0, 0)
+
+
+def _apply_camera_offset():
+    """Apply relative camera offset on top of base position."""
+    camera.position = _base_camera_position + settings.camera_offset
+
+
+def _apply_light_settings():
+    """Convert light_azimuth/elevation to light_dir and set shader uniforms."""
+    light_dir = _light_dir_from_angles(settings.light_azimuth, settings.light_elevation)
+    # Set shader uniforms on the root scene entity (propagates to all children with the shader)
+    camera.parent.set_shader_input("light_dir", light_dir)
+    camera.parent.set_shader_input("light_intensity", settings.light_intensity)
+    camera.parent.set_shader_input("light_ambient", settings.light_ambient)
+
+
+def _recolor_all_cells():
+    """Recolor all cells based on their current state and settings colors."""
+    for (x, z), state in _cell_state.items():
+        if (x, z) in _grid_entities:
+            color_map = {
+                "wall": settings.wall_color,
+                "path": settings.path_color,
+                "frontier": settings.frontier_color,
+                "current": settings.current_color,
+            }
+            _grid_entities[(x, z)].color = color_map.get(state, settings.wall_color)
+
+
 def update():
     """Ursina update function called every frame. Process maze generation steps."""
     global _timer, _maze_gen
@@ -94,6 +169,12 @@ def update():
             break
 
 
+def input(key):
+    """Handle keyboard input."""
+    if key == "tab":
+        ui_panel.toggle()
+
+
 def run():
     """Initialize and run the Ursina scene."""
     global _maze_gen, _grid_entities, _timer
@@ -105,32 +186,54 @@ def run():
     _maze_gen = prims_maze_generator(WIDTH, HEIGHT, seed=42)
 
     # Build initial grid of solid cubes (all wall_color, representing unvisited walls)
-    # with basic_lighting_shader for 3D depth via per-face normal shading
+    # with dynamic_lighting_shader for parameterizable 3D depth via light angle/intensity
     for x in range(WIDTH):
         for z in range(HEIGHT):
             entity = Entity(
                 model="cube",
-                color=WALL_COLOR,
-                shader=basic_lighting_shader,
+                color=settings.wall_color,
+                shader=dynamic_lighting_shader,
                 position=(x, 0.5, z),
                 scale=(1, 1, 1),
                 collider="box",
             )
             _grid_entities[(x, z)] = entity
+            _cell_state[(x, z)] = "wall"  # Track initial state
 
     # Initialize start cell to carved visual state (path_color, lowered position)
     start_x, start_z = START_CELL
     if (start_x, start_z) in _grid_entities:
         start_entity = _grid_entities[(start_x, start_z)]
-        start_entity.color = PATH_COLOR
+        start_entity.color = settings.path_color
         start_entity.position = (start_x, -0.5, start_z)
+        _cell_state[(start_x, start_z)] = "path"
 
-    # Set up orthographic camera to frame the full maze regardless of size or aspect ratio
-    _frame_camera_on_maze(WIDTH, HEIGHT)
+    # Apply initial camera preset and lighting
+    _apply_camera_preset("Isometric")
+    _apply_light_settings()
 
-    # Register update function with __main__ module globals
-    # Ursina's _update() task looks for update() in __main__ module
+    # Build UI panel with callbacks
+    def on_camera_preset(name):
+        _apply_camera_preset(name)
+
+    def on_camera_offset(axis, value):
+        setattr(settings.camera_offset, axis, value)
+        _apply_camera_offset()
+
+    def on_light_changed(attr, value):
+        setattr(settings, attr, value)
+        _apply_light_settings()
+
+    def on_color_changed(attr, value):
+        setattr(settings, attr, value)
+        _recolor_all_cells()
+
+    ui_panel.build_panel(on_camera_preset, on_camera_offset, on_light_changed, on_color_changed)
+
+    # Register update and input functions with __main__ module globals
+    # Ursina's _update() task looks for update() and input() in __main__ module
     __main__.update = update
+    __main__.input = input
 
     # Run the application
     app.run()
@@ -139,23 +242,26 @@ def run():
 def _process_step(step):
     """Process a single maze generation step and update the scene."""
     if step.kind == StepKind.FRONTIER_ADDED:
-        # Color frontier cells orange (transient)
+        # Color frontier cells based on settings
         for x, z in step.cells:
             if (x, z) in _grid_entities:
-                _grid_entities[(x, z)].color = FRONTIER_COLOR
+                _grid_entities[(x, z)].color = settings.frontier_color
+                _cell_state[(x, z)] = "frontier"
 
     elif step.kind == StepKind.CURRENT:
-        # Color current cell green (transient)
+        # Color current cell based on settings
         if step.current:
             x, z = step.current
             if (x, z) in _grid_entities:
-                _grid_entities[(x, z)].color = CURRENT_COLOR
+                _grid_entities[(x, z)].color = settings.current_color
+                _cell_state[(x, z)] = "current"
 
     elif step.kind == StepKind.CARVED:
         # Animate carved cells downward and change to path color
         for x, z in step.cells:
             if (x, z) in _grid_entities:
                 entity = _grid_entities[(x, z)]
-                entity.color = PATH_COLOR
+                entity.color = settings.path_color
+                _cell_state[(x, z)] = "path"
                 # Animate to lowered position over 0.1 seconds
                 entity.animate_position((x, -0.5, z), duration=0.1)
