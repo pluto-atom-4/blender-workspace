@@ -14,7 +14,15 @@ total_content_height = 0
 PANEL_WIDTH = 0.3
 PANEL_HALF_WIDTH = PANEL_WIDTH / 2
 MARGIN = 0.02
-SECTION_SPACING = 0.05
+SECTION_SPACING = 0.03
+SLIDER_ROW_HEIGHT = 0.07
+SLIDER_SECTION_TAIL_GAP = 0.02
+COLOR_PICKER_SCALE = 0.6
+COLOR_ROW_STEP = 0.14
+PANEL_TOP = 0.4
+BAR_TOP_Y = -0.45
+BAR_CLEARANCE = 0.02
+VIEWPORT_HEIGHT = PANEL_TOP - (BAR_TOP_Y + BAR_CLEARANCE)
 
 
 def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
@@ -52,7 +60,7 @@ def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
     content = Entity(parent=panel_root, x=0, y=0)
     content.scroll_y_offset = 0  # Track scroll position
 
-    y_offset = 0.4  # Start near top
+    y_offset = PANEL_TOP
 
     # === CAMERA SECTION ===
     Text(parent=content, text="Camera", x=-PANEL_HALF_WIDTH + 0.01, y=y_offset, scale=1.2, origin=(0, 0))
@@ -75,7 +83,7 @@ def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
         )
         s.on_value_changed = (lambda axis=axis, s=s: on_camera_rotation(axis, s.value))
 
-    y_offset -= 0.25  # Space for 3 sliders
+    y_offset -= (2 * SLIDER_ROW_HEIGHT + SLIDER_SECTION_TAIL_GAP)
 
     # === LIGHT SECTION ===
     y_offset -= SECTION_SPACING
@@ -125,7 +133,7 @@ def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
     for s, attr in ((az, "light_azimuth"), (el, "light_elevation"), (intensity, "light_intensity")):
         s.on_value_changed = (lambda s=s, attr=attr: on_light_changed(attr, s.value))
 
-    y_offset -= 0.25  # Space for 3 sliders
+    y_offset -= (2 * SLIDER_ROW_HEIGHT + SLIDER_SECTION_TAIL_GAP)
 
     # === COLORS SECTION ===
     y_offset -= SECTION_SPACING
@@ -134,23 +142,23 @@ def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
 
     # Primary colors: Wall and Path
     for label, attr in (("Wall", "wall_color"), ("Path", "path_color")):
-        cp = ColorPicker(parent=content, x=-PANEL_HALF_WIDTH + 0.05, y=y_offset, scale=0.8)
+        cp = ColorPicker(parent=content, x=-PANEL_HALF_WIDTH + 0.05, y=y_offset, scale=COLOR_PICKER_SCALE)
         Text(parent=cp, text=label, y=0.04, origin=(0, 0), scale=0.8)
         cp.value = getattr(settings, attr)
         cp.on_value_changed = (lambda cp=cp, attr=attr: on_color_changed(attr, cp.value))
-        y_offset -= 0.12
+        y_offset -= COLOR_ROW_STEP
 
     # Animation colors subsection
-    y_offset -= 0.03
+    y_offset -= 0.015
     Text(parent=content, text="Animation", x=-PANEL_HALF_WIDTH + 0.01, y=y_offset, scale=1.0, origin=(0, 0))
-    y_offset -= 0.05
+    y_offset -= 0.02
 
     for label, attr in (("Frontier", "frontier_color"), ("Current", "current_color")):
-        cp = ColorPicker(parent=content, x=-PANEL_HALF_WIDTH + 0.05, y=y_offset, scale=0.8)
+        cp = ColorPicker(parent=content, x=-PANEL_HALF_WIDTH + 0.05, y=y_offset, scale=COLOR_PICKER_SCALE)
         Text(parent=cp, text=label, y=0.04, origin=(0, 0), scale=0.8)
         cp.value = getattr(settings, attr)
         cp.on_value_changed = (lambda cp=cp, attr=attr: on_color_changed(attr, cp.value))
-        y_offset -= 0.12
+        y_offset -= COLOR_ROW_STEP
 
     # Calculate total content height for scroll limits
     total_content_height = abs(y_offset - 0.4)
@@ -180,8 +188,9 @@ def handle_scroll(direction):
     if not (panel_left <= mouse.x <= panel_right):
         return
 
-    if direction > 0:  # Scroll up
-        content.y = min(0, content.y + 0.05)
-    elif direction < 0:  # Scroll down
-        max_scroll = max(0, total_content_height - 0.9)
-        content.y = max(-max_scroll, content.y - 0.05)
+    max_scroll = max(0, total_content_height - VIEWPORT_HEIGHT)
+
+    if direction > 0:  # Scroll up: return toward the top of the content
+        content.y = max(0, content.y - 0.05)
+    elif direction < 0:  # Scroll down: reveal lower content (content.y grows)
+        content.y = min(max_scroll, content.y + 0.05)

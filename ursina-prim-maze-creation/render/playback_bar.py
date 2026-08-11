@@ -1,6 +1,7 @@
 """Bottom playback control bar: play/pause/rewind/forward buttons, frame counter, seek slider."""
 from ursina import Entity, Text, camera, mouse
 from ursina.prefabs.slider import Slider
+from ursina.prefabs.button import Button
 
 # Module-level UI elements
 bar_root = None
@@ -23,14 +24,14 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
     global bar_root, frame_text, seek_slider
 
     # Root bar positioned at bottom center
-    bar_root = Entity(parent=camera.ui, x=0, y=-0.46)
+    bar_root = Entity(parent=camera.ui, x=0, y=-0.475)
 
     # Background quad for visual boundary (light semi-transparent)
     bg = Entity(
         parent=bar_root,
         model="quad",
         color=(0.2, 0.2, 0.2, 0.7),
-        scale=(2.0, 0.08),
+        scale=(2.0, 0.05),
         z=0.01,  # Behind buttons
     )
 
@@ -38,38 +39,42 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
     button_scale = (0.06, 0.04)
 
     # === Rewind Button ===
-    rewind_btn = Entity(
+    rewind_btn = Button(
         parent=bar_root,
         model="quad",
-        color=(0.5, 0.5, 0.5, 1.0),
         scale=button_scale,
         x=-0.35,
+        text="|<",
+        text_size=0.5,
+        on_click=on_rewind,
     )
-    Text(parent=rewind_btn, text="|<", scale=2)
-    rewind_btn.on_click = on_rewind
+    rewind_btn.color = (0.5, 0.5, 0.5, 1.0)
 
     # === Play/Pause Toggle Button ===
-    play_pause_btn = Entity(
+    play_pause_btn = Button(
         parent=bar_root,
         model="quad",
-        color=(0.5, 0.5, 0.5, 1.0),
         scale=button_scale,
         x=-0.22,
+        text="||",
+        text_size=0.5,
+        on_click=on_play_pause,
     )
-    # Store reference so scene.py can update the label
-    play_pause_btn.text_entity = Text(parent=play_pause_btn, text="||", scale=2)
-    play_pause_btn.on_click = on_play_pause
+    play_pause_btn.color = (0.5, 0.5, 0.5, 1.0)
+    # Button() auto-creates play_pause_btn.text_entity from text= above —
+    # update_play_pause_label() already does btn.text_entity.text = ... and keeps working.
 
     # === Forward Button ===
-    forward_btn = Entity(
+    forward_btn = Button(
         parent=bar_root,
         model="quad",
-        color=(0.5, 0.5, 0.5, 1.0),
         scale=button_scale,
         x=-0.09,
+        text=">|",
+        text_size=0.5,
+        on_click=on_forward,
     )
-    Text(parent=forward_btn, text=">|", scale=2)
-    forward_btn.on_click = on_forward
+    forward_btn.color = (0.5, 0.5, 0.5, 1.0)
 
     # === Frame Counter Text ===
     frame_text = Text(

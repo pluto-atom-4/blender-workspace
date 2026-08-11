@@ -39,6 +39,8 @@ _cell_state = {}  # Track each cell's logical role: 'wall'|'path'|'frontier'|'cu
 # Camera state
 _base_camera_position = Vec3(0, 0, 0)  # Stored after preset application
 _base_camera_rotation = Vec3(0, 0, 0)  # Stored after preset application
+_camera_center = Vec3(0, 0, 0)  # Maze center to orbit around (rotation-independent)
+_camera_distance = 0.0  # Distance from center to camera, preserved across rotation offsets
 
 
 def _frame_camera_on_maze(width, height, margin=CAMERA_MARGIN, rotation_x=60, rotation_y=30, orthographic=True):
@@ -52,6 +54,9 @@ def _frame_camera_on_maze(width, height, margin=CAMERA_MARGIN, rotation_x=60, ro
         rotation_x: Camera pitch in degrees (60 = typical isometric)
         rotation_y: Camera yaw in degrees (30 = typical isometric)
         orthographic: If True, use orthographic; if False, use perspective (ignored here; caller handles)
+
+    Returns:
+        Tuple (center, distance) - center point of maze, distance from center to camera
     """
     camera.orthographic = orthographic
     camera.rotation_x = rotation_x
@@ -86,6 +91,8 @@ def _frame_camera_on_maze(width, height, margin=CAMERA_MARGIN, rotation_x=60, ro
     distance = diagonal * margin + 10
     camera.position = center - forward * distance
 
+    return center, distance
+
 
 def _apply_camera_preset(name):
     """Apply a camera preset and store the base position and rotation for offset adjustments.
@@ -101,7 +108,7 @@ def _apply_camera_preset(name):
     preset = CAMERA_PRESETS[name]
 
     # Orthographic preset (only Isometric exists now)
-    _frame_camera_on_maze(
+    center, distance = _frame_camera_on_maze(
         WIDTH,
         HEIGHT,
         margin=CAMERA_MARGIN,
@@ -111,17 +118,25 @@ def _apply_camera_preset(name):
     )
 
     # Store base position and rotation, reset rotation offset
-    global _base_camera_position, _base_camera_rotation
+    global _base_camera_position, _base_camera_rotation, _camera_center, _camera_distance
     _base_camera_position = Vec3(camera.position)
     _base_camera_rotation = Vec3(camera.rotation_x, camera.rotation_y, camera.rotation_z)
+    _camera_center = center
+    _camera_distance = distance
     settings.camera_rotation_offset = Vec3(0, 0, 0)
 
 
 def _apply_camera_rotation_offset():
-    """Apply rotation offset on top of base rotation."""
+    """Apply rotation offset on top of base rotation, then re-derive camera
+    position so the camera orbits around the maze center at a constant
+    distance instead of rotating in place. Reuses center/distance captured
+    at preset time — fov is left untouched to avoid a zoom-pulse while
+    dragging the rotation sliders (dynamic=True, fire every tick)."""
     camera.rotation_x = _base_camera_rotation.x + settings.camera_rotation_offset.x
     camera.rotation_y = _base_camera_rotation.y + settings.camera_rotation_offset.y
     camera.rotation_z = _base_camera_rotation.z + settings.camera_rotation_offset.z
+
+    camera.position = _camera_center - camera.forward * _camera_distance
 
 
 def _apply_light_settings():
