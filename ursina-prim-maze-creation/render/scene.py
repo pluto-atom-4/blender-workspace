@@ -258,6 +258,9 @@ def update():
     """Ursina update function called every frame. Process maze generation steps."""
     global _timer, _current_step_index, _playback_state
 
+    # Handle panel scroll every frame regardless of playback state (no-ops if panel hidden)
+    ui_panel.update_scroll()
+
     # Gate timer accrual on playback state
     if _playback_state != "playing":
         return

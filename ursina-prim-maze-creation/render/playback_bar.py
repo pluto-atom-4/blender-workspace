@@ -41,7 +41,7 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
     rewind_btn = Entity(
         parent=bar_root,
         model="quad",
-        color=(0.5, 0.5, 0.5),
+        color=(0.5, 0.5, 0.5, 1.0),
         scale=button_scale,
         x=-0.35,
     )
@@ -52,7 +52,7 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
     play_pause_btn = Entity(
         parent=bar_root,
         model="quad",
-        color=(0.5, 0.5, 0.5),
+        color=(0.5, 0.5, 0.5, 1.0),
         scale=button_scale,
         x=-0.22,
     )
@@ -64,7 +64,7 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
     forward_btn = Entity(
         parent=bar_root,
         model="quad",
-        color=(0.5, 0.5, 0.5),
+        color=(0.5, 0.5, 0.5, 1.0),
         scale=button_scale,
         x=-0.09,
     )
