@@ -19,6 +19,9 @@ SLIDER_ROW_HEIGHT = 0.07
 SLIDER_SECTION_TAIL_GAP = 0.02
 COLOR_PICKER_SCALE = 0.6
 COLOR_ROW_STEP = 0.14
+SLIDER_WIDTH_FACTOR = 0.25 / 0.525  # Slider.bg is hardcoded to .525 wide (ursina/prefabs/slider.py);
+                                     # scale the whole Slider (bg+knob together, siblings) to match the
+                                     # originally-intended 0.25 width. Label is counter-scaled back to 1x.
 PANEL_TOP = 0.4
 BAR_TOP_Y = -0.45
 BAR_CLEARANCE = 0.02
@@ -79,8 +82,9 @@ def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
             x=-PANEL_HALF_WIDTH + 0.01,
             y=y_offset - i * 0.07,
             step=1,
-            width=0.25,
         )
+        s.scale_x = SLIDER_WIDTH_FACTOR
+        s.label.scale_x = 1 / SLIDER_WIDTH_FACTOR
         s.on_value_changed = (lambda axis=axis, s=s: on_camera_rotation(axis, s.value))
 
     y_offset -= (2 * SLIDER_ROW_HEIGHT + SLIDER_SECTION_TAIL_GAP)
@@ -100,7 +104,6 @@ def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
         x=-PANEL_HALF_WIDTH + 0.01,
         y=y_offset,
         step=1,
-        width=0.25,
     )
 
     el = Slider(
@@ -113,7 +116,6 @@ def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
         x=-PANEL_HALF_WIDTH + 0.01,
         y=y_offset - 0.07,
         step=1,
-        width=0.25,
     )
 
     intensity = Slider(
@@ -126,11 +128,12 @@ def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
         x=-PANEL_HALF_WIDTH + 0.01,
         y=y_offset - 0.14,
         step=0.1,
-        width=0.25,
     )
 
     # Wire light slider callbacks
     for s, attr in ((az, "light_azimuth"), (el, "light_elevation"), (intensity, "light_intensity")):
+        s.scale_x = SLIDER_WIDTH_FACTOR
+        s.label.scale_x = 1 / SLIDER_WIDTH_FACTOR
         s.on_value_changed = (lambda s=s, attr=attr: on_light_changed(attr, s.value))
 
     y_offset -= (2 * SLIDER_ROW_HEIGHT + SLIDER_SECTION_TAIL_GAP)
@@ -149,9 +152,9 @@ def build_panel(on_camera_rotation, on_light_changed, on_color_changed):
         y_offset -= COLOR_ROW_STEP
 
     # Animation colors subsection
-    y_offset -= 0.015
+    y_offset -= 0.05  # was 0.015 — insufficient clearance from Path ColorPicker's bottom edge
     Text(parent=content, text="Animation", x=-PANEL_HALF_WIDTH + 0.01, y=y_offset, scale=1.0, origin=(0, 0))
-    y_offset -= 0.02
+    y_offset -= 0.05  # was 0.02 — was smaller than Frontier ColorPicker's own title-label offset (0.024)
 
     for label, attr in (("Frontier", "frontier_color"), ("Current", "current_color")):
         cp = ColorPicker(parent=content, x=-PANEL_HALF_WIDTH + 0.05, y=y_offset, scale=COLOR_PICKER_SCALE)

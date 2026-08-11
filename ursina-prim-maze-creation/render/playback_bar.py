@@ -1,5 +1,5 @@
 """Bottom playback control bar: play/pause/rewind/forward buttons, frame counter, seek slider."""
-from ursina import Entity, Text, camera, mouse
+from ursina import Entity, Text, camera, mouse, color
 from ursina.prefabs.slider import Slider
 from ursina.prefabs.button import Button
 
@@ -45,10 +45,13 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
         scale=button_scale,
         x=-0.35,
         text="|<",
-        text_size=0.5,
+        text_size=0.8,
+        text_color=color.white,
         on_click=on_rewind,
     )
     rewind_btn.color = (0.5, 0.5, 0.5, 1.0)
+    rewind_btn.text_entity.use_tags = False
+    rewind_btn.text_entity.text = "|<"
 
     # === Play/Pause Toggle Button ===
     play_pause_btn = Button(
@@ -57,12 +60,15 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
         scale=button_scale,
         x=-0.22,
         text="||",
-        text_size=0.5,
+        text_size=0.8,
+        text_color=color.white,
         on_click=on_play_pause,
     )
     play_pause_btn.color = (0.5, 0.5, 0.5, 1.0)
     # Button() auto-creates play_pause_btn.text_entity from text= above —
     # update_play_pause_label() already does btn.text_entity.text = ... and keeps working.
+    play_pause_btn.text_entity.use_tags = False
+    play_pause_btn.text_entity.text = "||"
 
     # === Forward Button ===
     forward_btn = Button(
@@ -71,10 +77,13 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
         scale=button_scale,
         x=-0.09,
         text=">|",
-        text_size=0.5,
+        text_size=0.8,
+        text_color=color.white,
         on_click=on_forward,
     )
     forward_btn.color = (0.5, 0.5, 0.5, 1.0)
+    forward_btn.text_entity.use_tags = False
+    forward_btn.text_entity.text = ">|"
 
     # === Frame Counter Text ===
     frame_text = Text(
