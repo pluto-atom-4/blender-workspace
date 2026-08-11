@@ -164,21 +164,24 @@ def toggle():
         panel_root.enabled = not panel_root.enabled
 
 
-def update_scroll():
-    """Handle mouse wheel scrolling when hovering over panel."""
+def handle_scroll(direction):
+    """Handle a discrete mouse-wheel scroll event over the panel.
+
+    Args:
+        direction: +1 for scroll up, -1 for scroll down.
+    """
     if not panel_root or not panel_root.enabled or content is None:
         return
 
-    # Check if mouse is within panel's x-range
+    # Check if mouse is within panel's x-range (hover-gate, preserved from update_scroll())
     panel_left = panel_root.x - PANEL_HALF_WIDTH
     panel_right = panel_root.x + PANEL_HALF_WIDTH
 
     if not (panel_left <= mouse.x <= panel_right):
         return
 
-    # Handle scroll
-    if mouse.scroll[1] > 0:  # Scroll up
+    if direction > 0:  # Scroll up
         content.y = min(0, content.y + 0.05)
-    elif mouse.scroll[1] < 0:  # Scroll down
+    elif direction < 0:  # Scroll down
         max_scroll = max(0, total_content_height - 0.9)
         content.y = max(-max_scroll, content.y - 0.05)
