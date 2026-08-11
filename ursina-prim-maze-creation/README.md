@@ -17,12 +17,30 @@ uv sync --extra test
 uv run main.py
 ```
 
-This launches an interactive 3D window (requires a display). The visualization shows a grid of solid blocks (light gray = unvisited walls) that animate and change color as the maze carves itself:
+This launches an interactive 3D window (requires a display). The visualization shows a grid of solid blocks that animate and change color as the maze carves itself:
 
-- **Unvisited walls** (initial state): Light gray
-- **Frontier cells** (reachable but not yet carved): Yellow/orange
-- **Current cell** (selected for carving): Green
-- **Carved paths**: Dark gray, lowered by 0.5 units
+- **Unvisited walls** (initial state): Slate blue (based on current settings)
+- **Frontier cells** (reachable but not yet carved): Orange (customizable)
+- **Current cell** (selected for carving): Green (customizable)
+- **Carved paths**: Light sand (customizable), lowered by 0.5 units
+
+### In-App Controls
+
+Press **Tab** to toggle the control panel. The panel includes:
+
+- **Camera Presets**: Switch between Isometric, Top-Down, Side, or First-Person views
+  - *Isometric*: Default 3D view with full maze visible
+  - *Top-Down*: Orthographic bird's-eye view
+  - *Side*: Orthographic side view
+  - *First-Person*: Perspective view from start cell (not guaranteed to see full maze)
+- **Camera Offset Sliders** (X, Y, Z): Nudge camera position relative to the current preset
+- **Light Controls**:
+  - *Azimuth*: Rotate light around the maze (0–360°)
+  - *Elevation*: Adjust light height (−10° to 90°)
+  - *Intensity*: Scale diffuse shading strength (0–2×)
+- **Color Pickers**: Customize wall, path, frontier, and current-cell colors in real time
+
+Changes to colors, light, and camera are applied instantly to the running visualization.
 
 ### Tuning Parameters
 
@@ -39,7 +57,7 @@ HEIGHT = 7
 ANIMATION_SPEED = 0.02
 ```
 
-Camera is set to an isometric-style 3D view; you can adjust `camera.position`, `camera.rotation_x`, and `camera.rotation_y` in the same file if you prefer a different angle.
+For more advanced tuning (light angle defaults, camera margin, cell heights), see the constants and `CAMERA_PRESETS` dict in `render/scene.py`.
 
 ## Tests
 
@@ -60,12 +78,19 @@ The test suite does not import Ursina, so it runs without a display.
 ## Architecture
 
 - **`maze/prims.py`** — Pure Python Prim's Algorithm generator. Yields `MazeStep` objects marking state transitions (frontier growth, current selection, carve events). No graphics code.
-- **`render/scene.py`** — Ursina scene consumer. Builds a 3D grid of Entity cubes, registers an `update()` loop that consumes generator steps at a controlled rate, and dispatches on step kind to animate and recolor cells.
+- **`render/scene.py`** — Ursina scene consumer. Builds a 3D grid of Entity cubes, registers an `update()` loop that consumes generator steps at a controlled rate, dispatches on step kind to animate and recolor cells, and sets up the in-app control panel.
+- **`render/settings.py`** — Central `RenderSettings` dataclass holding all mutable state (colors, lighting angles/intensity, camera preset, camera offset). Shared singleton accessed by scene, shaders, and UI.
+- **`render/shaders.py`** — Custom `dynamic_lighting_shader` (parameterized lighting via uniforms) and `_light_dir_from_angles()` conversion. Replaces the fixed `basic_lighting_shader` for real-time light angle/intensity adjustment.
+- **`render/ui_panel.py`** — Control panel builder: ButtonGroup for camera presets, Sliders for light and camera offset, ColorPickers for custom colors. Registers callbacks to drive scene updates.
 - **`main.py`** — Entry point; calls `run()` to initialize Ursina and start the visualization.
 - **`tests/test_prims.py`** — Pytest suite for the algorithm; does not depend on Ursina.
 
 ## Limitations
 
 - Requires an interactive display and window system (X11, Wayland, etc.). The visualization will fail in a headless environment.
-- Camera is fixed (not user-controllable mid-run). Pause/resume and per-step control may be added in future work.
-- Maze size and animation speed can only be tuned by editing `render/scene.py` — no CLI flags yet.
+- Cross-session persistence (saving/loading settings) is not implemented.
+- Smooth camera interpolation between presets is deferred; preset switches are instantaneous.
+- First-Person preset does not guarantee visibility of the entire maze — it positions the camera at the start cell, so distant regions may be out of view or behind obstacles.
+- Multi-light types (e.g., point lights, multiple directional lights) are deferred; the current shader uses a single directional light.
+- Maze size, animation speed, and light defaults can only be tuned by editing source code — CLI flags are not yet implemented.
+- Auto re-framing on window resize is not implemented.
