@@ -19,9 +19,11 @@ class RenderSettings:
     light_intensity: float = 1.0     # multiplier on diffuse component
     light_ambient: float = 0.35      # base ambient level (0.0-1.0)
 
-    # Camera preset and offset
-    camera_preset: str = "Isometric"  # e.g. "Top-Down", "Isometric", "Side", "First-Person"
-    camera_offset: object = field(default_factory=lambda: Vec3(0, 0, 0))  # relative nudge
+    # Camera preset (Isometric only, hardcoded)
+    camera_preset: str = "Isometric"
+
+    # Camera rotation offset (±45° per axis, applied after framing)
+    camera_rotation_offset: object = field(default_factory=lambda: Vec3(0, 0, 0))
 
 
 # Module-level singleton
