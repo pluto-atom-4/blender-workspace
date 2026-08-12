@@ -6,6 +6,8 @@ after its section, for the caller to thread into the next section. No module-lev
 state is read or mutated here — panel_root/content/total_content_height stay owned
 by render/ui_panel.py's build_panel()/toggle()/handle_scroll().
 """
+from pathlib import Path
+
 from ursina import Text
 from ursina.prefabs.slider import Slider
 from ursina.prefabs.color_picker import ColorPicker
@@ -15,7 +17,7 @@ from render.settings import settings
 # Panel geometry configuration (moved here verbatim from ui_panel.py — every value
 # below encodes a specific fix from issue #70's 4 review rounds; do not change any
 # of them as part of this extraction).
-PANEL_WIDTH = 0.3
+PANEL_WIDTH = 0.32
 PANEL_HALF_WIDTH = PANEL_WIDTH / 2
 MARGIN = 0.02
 SECTION_SPACING = 0.03
@@ -31,7 +33,6 @@ BAR_TOP_Y = -0.45
 BAR_CLEARANCE = 0.02
 VIEWPORT_HEIGHT = PANEL_TOP - (BAR_TOP_Y + BAR_CLEARANCE)
 
-
 def render_camera_controls(content, y_offset, on_camera_rotation):
     """Render the Camera section (header + X/Y/Z rotation sliders).
 
@@ -43,12 +44,12 @@ def render_camera_controls(content, y_offset, on_camera_rotation):
     Returns:
         y_offset immediately after this section.
     """
-    Text(parent=content, text="Camera", x=-PANEL_HALF_WIDTH + 0.16, y=y_offset, scale=1.2, origin=(0, 0))
+    Text(parent=content, text="Camera", x=-PANEL_HALF_WIDTH + 0.16, y=y_offset, scale=1.0, origin=(0, 0))
     y_offset -= 0.05
 
     # Rotation sliders (X, Y, Z) with range ±45°
     for i, axis in enumerate("xyz"):
-        label_text = f"Rotation {axis.upper()}"
+        label_text = f"{axis.upper()}"
         s = Slider(
             min=-45,
             max=45,
@@ -81,14 +82,14 @@ def render_light_controls(content, y_offset, on_light_changed):
         y_offset immediately after this section.
     """
     y_offset -= SECTION_SPACING
-    Text(parent=content, text="Light", x=-PANEL_HALF_WIDTH + 0.16, y=y_offset, scale=1.2, origin=(0, 0))
+    Text(parent=content, text="Light", x=-PANEL_HALF_WIDTH + 0.16, y=y_offset, scale=1.0, origin=(0, 0))
     y_offset -= 0.05
 
     az = Slider(
         min=0,
         max=360,
         default=settings.light_azimuth,
-        text="Azimuth",
+        text="A",
         dynamic=True,
         parent=content,
         x=-PANEL_HALF_WIDTH + 0.05,
@@ -96,11 +97,13 @@ def render_light_controls(content, y_offset, on_light_changed):
         step=1,
     )
 
+
+
     el = Slider(
         min=-10,
         max=90,
         default=settings.light_elevation,
-        text="Elevation",
+        text="E",
         dynamic=True,
         parent=content,
         x=-PANEL_HALF_WIDTH + 0.05,
@@ -108,17 +111,22 @@ def render_light_controls(content, y_offset, on_light_changed):
         step=1,
     )
 
+
     intensity = Slider(
         min=0,
         max=2,
         default=settings.light_intensity,
-        text="Intensity",
+        text="I",
         dynamic=True,
         parent=content,
         x=-PANEL_HALF_WIDTH + 0.05,
         y=y_offset - 0.14,
         step=0.1,
     )
+
+    # az.label.font = "EmojiFont.ttf"
+    # el.label.font = "EmojiFont.ttf"
+    # intensity.label.font = "EmojiFont.ttf"
 
     # Wire light slider callbacks
     for s, attr in ((az, "light_azimuth"), (el, "light_elevation"), (intensity, "light_intensity")):
@@ -144,7 +152,7 @@ def render_color_controls(content, y_offset, on_color_changed):
         y_offset immediately after this section.
     """
     y_offset -= SECTION_SPACING
-    Text(parent=content, text="Colors", x=-PANEL_HALF_WIDTH + 0.16, y=y_offset, scale=1.2, origin=(0, 0))
+    Text(parent=content, text="Colors", x=-PANEL_HALF_WIDTH + 0.16, y=y_offset, scale=1.0, origin=(0, 0))
     y_offset -= 0.05
 
     # Primary colors: Wall and Path
@@ -157,7 +165,7 @@ def render_color_controls(content, y_offset, on_color_changed):
 
     # Animation colors subsection
     y_offset -= 0.05  # was 0.015 — insufficient clearance from Path ColorPicker's bottom edge
-    Text(parent=content, text="Animation", x=-PANEL_HALF_WIDTH + 0.12, y=y_offset, scale=1.0, origin=(0, 0))
+    Text(parent=content, text="Animation", x=-PANEL_HALF_WIDTH + 0.16, y=y_offset, scale=1.0, origin=(0, 0))
     y_offset -= 0.05  # was 0.02 — was smaller than Frontier ColorPicker's own title-label offset (0.024)
 
     for label, attr in (("Frontier", "frontier_color"), ("Current", "current_color")):
