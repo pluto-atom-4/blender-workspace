@@ -303,6 +303,7 @@ name = "ursina-prim-maze-creation"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "panda3d" },
     { name = "ursina" },
 ]
 
@@ -313,6 +314,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "panda3d", specifier = ">=1.10.16" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.1.1" },
     { name = "ursina", specifier = ">=8.3.0" },
 ]

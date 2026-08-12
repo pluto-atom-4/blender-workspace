@@ -5,6 +5,7 @@ description = "Real-time 3D animated maze generation (Prim's Algorithm) on the U
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "panda3d>=1.10.16",
     "ursina>=8.3.0",
 ]
 
