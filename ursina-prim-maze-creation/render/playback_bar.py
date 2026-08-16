@@ -31,7 +31,7 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
         parent=bar_root,
         model="quad",
         color=(0.2, 0.2, 0.2, 0.7),
-        scale=(2.0, 0.05),
+        scale=(0.96, 0.05),
         z=0.01,  # Behind buttons
     )
 
@@ -89,8 +89,8 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
     frame_text = Text(
         parent=bar_root,
         text="0 / 0",
-        x=0.15,
-        scale=1.5,
+        x=0.30,
+        scale=1.0,
     )
 
     # === Seek Slider ===
@@ -101,7 +101,7 @@ def build_bar(on_rewind, on_play_pause, on_forward, on_seek):
         text="",
         dynamic=False,  # Only fire on release
         parent=bar_root,
-        x=0.65,
+        x=0.01,
         scale=0.5,
     )
     seek_slider.on_value_changed = lambda: on_seek(int(seek_slider.value))
