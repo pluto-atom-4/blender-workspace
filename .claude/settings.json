@@ -1,14 +1,52 @@
 {
+  "effortLevel": "high",
+  "env": {
+    "MCP_TOOL_TIMEOUT": "600000"
+  },
   "enabledMcpjsonServers": [
     "blender-local-agent"
   ],
   "permissions": {
-    "allow": [
-      "mcp__blender-local-agent__run_blender_python",
-      "mcp__blender-local-agent__check_blender_live_status"
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./blender-mcp/.venv/**)",
+      "Read(./blender-project/renders/**)",
+      "Bash(rm -rf:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git push --force:*)",
+      "Bash(sudo:*)"
     ],
     "ask": [
-      "mcp__blender-local-agent__run_blender_python_live"
+      "mcp__blender-local-agent__run_blender_python_live",
+      "Bash(git push:*)",
+      "Bash(gh pr merge:*)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./AGENTS.md)",
+      "Edit(./.claude/**)"
+    ],
+    "allow": [
+      "mcp__blender-local-agent__run_blender_python",
+      "mcp__blender-local-agent__check_blender_live_status",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(git --version)",
+      "Bash(gh issue view:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(python3 scripts/context-audit.py)",
+      "Bash(python3 -m json.tool:*)",
+      "Bash(python3 -m py_compile:*)",
+      "Bash(bash -n:*)",
+      "Bash(blender --version)",
+      "Bash(uv sync --extra test)",
+      "Bash(uv run --extra test pytest:*)"
     ]
   },
   "hooks": {
