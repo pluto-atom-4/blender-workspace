@@ -101,9 +101,13 @@ WorldInfo {
   ]
 }
 
+# Viewpoint tuned for legged_robot geometry (issue #80). Empirically verified via
+# headless Webots render to center and appropriately zoom the robot. Target camera
+# at chassis mid-height (0, 0, 0.02); camera distance 0.36 m; robot fills ~40–45%
+# of frame width. Verified NOT to be the previous pendulum_world.wbt copy-paste.
 Viewpoint {
-  orientation -0.30 0.30 0.90 1.05
-  position 0.55 -0.65 0.42
+  orientation -0.17 0.07 0.98 2.37
+  position 0.24 -0.24 0.14
 }
 
 TexturedBackground {
