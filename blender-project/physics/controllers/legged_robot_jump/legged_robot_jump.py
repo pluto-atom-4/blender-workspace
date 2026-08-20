@@ -259,6 +259,11 @@ try:
     wheel_motor_L = robot.getDevice("wheel_motor_L")
     log_debug("Got wheel motors")
 
+    # Switch wheel motors to velocity-control mode (position control is the default)
+    wheel_motor_R.setPosition(float('inf'))
+    wheel_motor_L.setPosition(float('inf'))
+    log_debug("Switched wheel motors to velocity-control mode")
+
     # Hip position sensors (if available; may need to be added to .wbt)
     try:
         hip_position_R = robot.getDevice("hip_position_R")
@@ -296,7 +301,7 @@ try:
 
     log_debug("About to enter main loop")
 
-    
+
     # Track position by integrating accelerometer data
     # We subtract gravity (9.81) from Z acceleration to get true acceleration relative to ground
     integrated_z = 0.0
