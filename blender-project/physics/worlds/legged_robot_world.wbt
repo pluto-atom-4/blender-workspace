@@ -84,6 +84,15 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 # controller "<none>" throughout -- acceptance bar for Phase 2 is
 # "validated loadable" (webots --batch --mode=fast --minimize --no-rendering
 # exits 0), not a working controller. No controller is written here.
+#
+# Z-offset fix (issue #84, 2026-08-19): LEGGED_ROBOT.translation Z updated
+# from 0 to 0.1005 m. Method: Webots Supervisor getPosition() queries on
+# wheel_L and wheel_R Solid nodes (not linkage_kinematics.ankle_position(),
+# which is inapplicable here since this world's rigid leg subtree geometry
+# differs from the Blender source). Measurement confirmed wheel centers at
+# Z = -0.060 m (wheel bottoms at -0.100 m due to 0.04 m radius). Required
+# offset = 0.100 m (wheels to ground) + 0.0005 m (0.5 mm clearance) = 0.1005 m.
+# Left/Right wheels perfectly symmetric (zero offset difference).
 
 WorldInfo {
   info [
@@ -124,7 +133,7 @@ RectangleArena {
 }
 
 DEF LEGGED_ROBOT Robot {
-  translation 0 0 0
+  translation 0 0 0.1005
   rotation 0 0 1 0
   children [
     Shape {
