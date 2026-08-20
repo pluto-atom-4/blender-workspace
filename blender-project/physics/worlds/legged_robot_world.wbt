@@ -81,9 +81,10 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 # hull. Mass values are round placeholders (not a real BOM), same caveat
 # PENDULUM.md and feasibility_phase0.py's own TOTAL_MASS_KG already carry.
 #
-# controller "<none>" throughout -- acceptance bar for Phase 2 is
-# "validated loadable" (webots --batch --mode=fast --minimize --no-rendering
-# exits 0), not a working controller. No controller is written here.
+# Controller update (issue #86): controller "<none>" -> "legged_robot_jump"
+# for jump behavior simulation. Added supervisor TRUE, PositionSensor devices
+# on hip joints, and DEF tags on wheel and leg link Solids for Supervisor
+# queries during jump simulation.
 #
 # Z-offset fix (issue #84, 2026-08-19): LEGGED_ROBOT.translation Z updated
 # from 0 to 0.1005 m. Method: Webots Supervisor getPosition() queries on
@@ -171,6 +172,9 @@ DEF LEGGED_ROBOT Robot {
           maxTorque 0.4413
           maxVelocity 6.5
         }
+        PositionSensor {
+          name "hip_position_R"
+        }
       ]
       endPoint Solid {
         translation 0.05 -0.038 0.02
@@ -193,7 +197,7 @@ DEF LEGGED_ROBOT Robot {
           # the knee, per the issue #25 Phase 2 plan's already-resolved
           # decision. translation is the knee pivot expressed in this
           # Solid's own local frame (hip-relative).
-          Solid {
+          DEF lower_link_R Solid {
             translation 0.0 0.0035 -0.04
             rotation 0 0 1 0
             name "lower_link_R"
@@ -222,7 +226,7 @@ DEF LEGGED_ROBOT Robot {
                     maxVelocity 6.5
                   }
                 ]
-                endPoint Solid {
+                endPoint DEF wheel_R Solid {
                   translation 0.022 0.0 -0.04
                   rotation 0 0 1 0
                   name "wheel_R"
@@ -298,6 +302,9 @@ DEF LEGGED_ROBOT Robot {
           maxTorque 0.4413
           maxVelocity 6.5
         }
+        PositionSensor {
+          name "hip_position_L"
+        }
       ]
       endPoint Solid {
         translation -0.05 -0.038 0.02
@@ -316,7 +323,7 @@ DEF LEGGED_ROBOT Robot {
               ]
             }
           }
-          Solid {
+          DEF lower_link_L Solid {
             translation 0.0 0.0035 -0.04
             rotation 0 0 1 0
             name "lower_link_L"
@@ -345,7 +352,7 @@ DEF LEGGED_ROBOT Robot {
                     maxVelocity 6.5
                   }
                 ]
-                endPoint Solid {
+                endPoint DEF wheel_L Solid {
                   translation -0.022 0.0 -0.04
                   rotation 0 0 1 0
                   name "wheel_L"
@@ -425,5 +432,6 @@ DEF LEGGED_ROBOT Robot {
     density -1
     mass 0.15
   }
-  controller "<none>"
+  controller "legged_robot_jump"
+  supervisor TRUE
 }

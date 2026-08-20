@@ -127,6 +127,55 @@ def estimate_jump_height(torque_n_m: float, lever_arm_m: float, stroke_m: float,
     return apex_height_m
 
 
+def estimate_liftoff_velocity(torque_n_m: float, lever_arm_m: float, stroke_m: float, mass_kg: float) -> float:
+    """Coarse liftoff velocity estimate from energy conservation, in m/s.
+
+    v = sqrt(2 * W / m) where W = F * stroke, F = torque / lever_arm.
+    """
+    force_n = torque_n_m / lever_arm_m
+    work_j = force_n * stroke_m
+    liftoff_velocity_m_s = math.sqrt(2.0 * work_j / mass_kg)
+    return liftoff_velocity_m_s
+
+
+def predict_jump() -> dict:
+    """Predict jump height and takeoff velocity for issue #86 simulation.
+
+    Returns a dict with keys:
+      - jump_height_optimistic: apex height in meters (100% stall torque)
+      - jump_height_pessimistic: apex height in meters (50% derated torque)
+      - takeoff_velocity_optimistic: liftoff velocity in m/s (100% stall)
+      - takeoff_velocity_pessimistic: liftoff velocity in m/s (50% derated)
+
+    Reuses existing estimate_jump_height() and estimate_liftoff_velocity()
+    functions with OPTIMISTIC (stall torque) and PESSIMISTIC (derated)
+    torque values.
+    """
+    optimistic_torque_n_m = STALL_TORQUE_N_M
+    pessimistic_torque_n_m = STALL_TORQUE_N_M * (1.0 - TORQUE_DERATE_FRACTION)
+
+    optimistic_height_m = estimate_jump_height(
+        optimistic_torque_n_m, LEVER_ARM_M, STROKE_M, TOTAL_MASS_KG
+    )
+    pessimistic_height_m = estimate_jump_height(
+        pessimistic_torque_n_m, LEVER_ARM_M, STROKE_M, TOTAL_MASS_KG
+    )
+
+    optimistic_velocity_m_s = estimate_liftoff_velocity(
+        optimistic_torque_n_m, LEVER_ARM_M, STROKE_M, TOTAL_MASS_KG
+    )
+    pessimistic_velocity_m_s = estimate_liftoff_velocity(
+        pessimistic_torque_n_m, LEVER_ARM_M, STROKE_M, TOTAL_MASS_KG
+    )
+
+    return {
+        "jump_height_optimistic": optimistic_height_m,
+        "jump_height_pessimistic": pessimistic_height_m,
+        "takeoff_velocity_optimistic": optimistic_velocity_m_s,
+        "takeoff_velocity_pessimistic": pessimistic_velocity_m_s,
+    }
+
+
 if __name__ == "__main__":
     optimistic_torque_n_m = STALL_TORQUE_N_M
     pessimistic_torque_n_m = STALL_TORQUE_N_M * (1.0 - TORQUE_DERATE_FRACTION)

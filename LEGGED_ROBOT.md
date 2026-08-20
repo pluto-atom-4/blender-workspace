@@ -105,7 +105,105 @@ object origins (which stayed mirror-correct throughout), so the body-mesh
 bug went undetected until actual mesh vertex extents in world space were
 checked.
 
-## Known limitations
+## Jump Behavior Simulation (issue #86)
+
+The `legged_robot_jump` controller (issue #86) implements a coordinated
+jump sequence via a state machine with position-controlled hip motors and
+velocity-controlled wheel motors.
+
+### Controller Timing
+
+The jump cycle spans 2.0 seconds total:
+
+| Phase | Time Window | Hip Angle Transition | Wheel Spin |
+|---|---|---|---|
+| **REST** | 0.0–0.2s | ~58° (1.012 rad, idle) | Off |
+| **CROUCH** | 0.2–0.7s | 58° → 120° (1.012 → 2.094 rad) | Off |
+| **PUSH** | 0.7–1.0s | 120° → 15° (2.094 → 0.262 rad) | Forward (2.0 rad/s) |
+| **FLIGHT** | 1.0–1.2s | 15° (held), wheels inactive | Off |
+| **LANDING** | 1.2–1.4s | 15° → 58° (0.262 → 1.012 rad) | Backward (−1.5 rad/s) |
+| **SETTLE** | 1.4–2.0s | ~58° (idle, absorb impact) | Off |
+
+**Easing profiles** (from Blender animation):
+- CROUCH phase: exponential ease (smooth slow→fast→slow)
+- PUSH phase: quadratic ease (sharp acceleration for explosive liftoff)
+
+**Wheel motor control**:
+- Forward spin (2.0 rad/s) during PUSH/LIFTOFF provides traction and assists
+  upward momentum transfer (phase #41 future work: optimize grip strategy).
+- Backward spin (−1.5 rad/s) during LANDING provides braking and impact
+  absorption. Parameters are configurable, not hardcoded in the controller.
+
+### Tuning Method
+
+The jump controller profile was derived from Phase 1's Blender animation
+keyframe timing and easing modes (see `model_dual_wheel_legged_robot_precise.py`
+`build_balance_and_jump()`). Real tuning steps:
+
+1. **Phase 0 feasibility gate** (`feasibility_phase0.py`):
+   - Computed expected jump height (optimistic/pessimistic) from STS3032
+     stall torque and stroke geometry: ~0.025–0.050 m range.
+   - Provided upper and lower bounds for acceptance testing.
+
+2. **Blender prototype animation**:
+   - Keyframed hip angles and timing empirically against visual reference.
+   - Derived liftoff velocity from measured Z-position derivative across
+     the push phase.
+   - Confirmed wheel contact and landing absorption feasibility.
+
+3. **Webots sim validation** (issue #86):
+   - Ran headless physics simulation with the jump controller and measured
+     actual jump height/velocity/torque from telemetry.
+   - Compared measured values against Phase 0 predictions to validate model
+     fidelity and servo torque limits.
+   - Acceptance gates: jump_height ≥ 5cm, takeoff_velocity ≥ 0.7 m/s,
+     max_servo_torque ≤ 0.353 N·m (80% of 0.4413 stall).
+
+**Servo torque margin**: The hip servo's stall torque is 0.4413 N·m; the
+controller limits peak usage to 0.353 N·m (80% derate) for safety. If measured
+torque approaches or exceeds this limit, reduce crouch/push duration or
+increase LEVER_ARM (though real leverage is set by linkage geometry, not
+configurable).
+
+**Wheel spin tuning**: Forward/backward wheel speeds (2.0/−1.5 rad/s) are
+placeholders tuned for visual plausibility during simulation. Real-world
+validation will likely require adjustment based on actual tire friction and
+impact response.
+
+### Known Limitations
+
+- **Mesh fidelity**: Collision bounding objects are coarse boxes/cylinders
+  (see legged_robot_world.wbt comments). Real ankle-wheel contact is
+  approximated; actual landing dynamics may differ.
+- **Wheel contact model**: Webots default friction (coulombFriction 0.9)
+  and no explicit slip model. Real treaded wheels have complex grip
+  behavior not captured by this simple model.
+- **Air resistance**: Zero drag; real jump arc is affected by air currents
+  and pitch/roll instability.
+- **Servo lag**: Hip motor response is instant (setPosition() applies
+  immediately in Webots). Real STS3032 servo has ~100ms response time +
+  load-dependent slew rate, not modeled.
+- **Spring/damping**: Hip joint has a spring constant (0.1329 N·m/rad),
+  but damping is zero. Real servo has internal friction and mechanical
+  spring hysteresis not captured here.
+- **Two-legged symmetry assumption**: Controller drives both hip motors
+  in sync. Real impact can break symmetry; no active load-balancing is
+  implemented.
+- **Knee kinematic coupling**: Lower-leg angle is determined by hip angle
+  (rigid 4-bar linkage, no active knee servo). If knee geometry ever
+  becomes actuated (e.g., for improved stability), the controller will
+  need update.
+
+Related issues and cross-links:
+
+- **Issue #25** (Phase 0/1/2): Original design and Phase 1 linkage geometry.
+- **Issue #41** (Wheel traction strategy): Future work on grip optimization
+  during launch/landing.
+- **Issue #84** (Z-offset fix): Corrected ground-plane positioning before
+  jump simulation; verified wheels land at floor level.
+- **Issue #86** (Jump behavior): This controller and test harness.
+
+## Known Limitations (general)
 
 - Leg joints are FK, not IK — see "FK instead of IK: why" above.
 - No dedicated `render_<subject>*.py` scripts exist for this feature; the
