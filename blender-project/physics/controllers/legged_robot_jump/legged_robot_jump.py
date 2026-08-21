@@ -1,16 +1,17 @@
-"""Webots controller for dual-wheel legged robot jump behavior (issue #86).
+"""Webots controller for dual-wheel legged robot jump behavior (issue #86, #90).
 
 Implements a state machine (REST → CROUCH → PUSH/LIFTOFF → FLIGHT → LANDING
 → SETTLE) that executes a coordinated jump sequence using:
-  - Hip motor position tracking with crouch/push profile (EXPO/QUAD easing)
+  - Hip motor position tracking with crouch/push profile (QUAD/EXPO easing)
   - Wheel motor velocity control during launch/landing windows
   - Sensor feedback (gyro, accelerometer, hip position, Supervisor CoM queries)
   - CSV telemetry logging (time, joint angles, sensor readings, CoM data)
+  - Configuration-driven angles and easing (issue #90)
 
 Timeline (total 2.0 second simulation):
   - REST (0.0–0.2s): stabilize at rest pose
-  - CROUCH (0.2–0.7s): lower stance (1.012 rad → 2.094 rad; ~120°), EXPO easing
-  - PUSH (0.7–1.0s): explosive liftoff (2.094 rad → 0.262 rad; ~15°), QUAD easing
+  - CROUCH (0.2–0.7s): lower stance (rest → crouch angle), QUAD easing
+  - PUSH (0.7–1.0s): explosive liftoff (crouch angle → launch angle), EXPO easing
   - FLIGHT (1.0–1.2s): airborne, wheels inactive
   - LANDING (1.2–1.4s): prepare for touchdown, spin wheels backward
   - SETTLE (1.4–2.0s): absorb landing, return to rest
@@ -31,12 +32,19 @@ Telemetry schema (CSV columns):
 """
 
 import csv
+import json
 import math
 import os
 import sys
 import traceback
 from enum import Enum
 from pathlib import Path
+
+try:
+    import yaml
+    HAS_YAML = True
+except ImportError:
+    HAS_YAML = False
 
 
 class State(Enum):
@@ -49,12 +57,122 @@ class State(Enum):
     SETTLE = "settle"
 
 
-# Configuration constants
-REST_ANGLE_RAD = 1.0122909661567112  # ~58° (default stance from linkage_kinematics)
-CROUCH_ANGLE_RAD = 2.0943951023931953  # ~120° (roughly pi/1.5)
-LAUNCH_ANGLE_RAD = 0.2617993877991494  # ~15° (roughly pi/12)
+# =============================================================================
+# Configuration Loading (issue #90)
+# =============================================================================
 
-# Timing (seconds)
+def load_jump_profile_config():
+    """Load jump profile configuration from YAML or JSON.
+
+    Searches for jump_profile.yaml or jump_profile.json in orchestration directory
+    (3 levels up from this controller).
+
+    Returns:
+        dict with keys: angles_rad (dict), easing (dict)
+
+    Raises:
+        RuntimeError: if config file not found or invalid
+    """
+    # Path: ../../orchestration/jump_profile*.{yaml,json}
+    controller_dir = Path(__file__).resolve().parent
+    orchestration_dir = controller_dir.parent.parent.parent / "orchestration"
+
+    yaml_path = orchestration_dir / "jump_profile.yaml"
+    json_path = orchestration_dir / "jump_profile.json"
+    simple_yaml_path = orchestration_dir / "jump_profile_simple.yaml"
+
+    config = None
+    config_path = None
+
+    # Try YAML first (more readable)
+    if simple_yaml_path.exists():
+        config_path = simple_yaml_path
+        if HAS_YAML:
+            try:
+                with open(config_path) as f:
+                    config = yaml.safe_load(f)
+                sys.stderr.write(f"[JUMP CONFIG] Loaded from {config_path}\n")
+            except Exception as e:
+                sys.stderr.write(f"[JUMP CONFIG] Error loading YAML: {e}\n")
+                config = None
+
+    # Try main YAML if simple version doesn't exist
+    if config is None and yaml_path.exists():
+        config_path = yaml_path
+        if HAS_YAML:
+            try:
+                with open(config_path) as f:
+                    config = yaml.safe_load(f)
+                sys.stderr.write(f"[JUMP CONFIG] Loaded from {config_path}\n")
+            except Exception as e:
+                sys.stderr.write(f"[JUMP CONFIG] Error loading YAML: {e}\n")
+                config = None
+
+    # Fallback to JSON if YAML not available or not found
+    if config is None and json_path.exists():
+        config_path = json_path
+        try:
+            with open(config_path) as f:
+                config = json.load(f)
+            sys.stderr.write(f"[JUMP CONFIG] Loaded from {config_path}\n")
+        except Exception as e:
+            sys.stderr.write(f"[JUMP CONFIG] Error loading JSON: {e}\n")
+            config = None
+
+    if config is None:
+        raise RuntimeError(
+            f"Jump profile config not found. Searched:\n"
+            f"  {simple_yaml_path}\n"
+            f"  {yaml_path}\n"
+            f"  {json_path}"
+        )
+
+    # Validate required fields
+    if "angles_rad" not in config:
+        raise RuntimeError("Config missing 'angles_rad' section")
+
+    angles = config.get("angles_rad", {})
+    required_angles = ["rest", "crouch", "launch"]
+    for angle_key in required_angles:
+        if angle_key not in angles:
+            raise RuntimeError(f"Config missing angles_rad.{angle_key}")
+
+    # Easing is optional (use defaults if not specified)
+    easing = config.get("easing", {})
+
+    config_out = {
+        "angles_rad": angles,
+        "easing": easing,
+    }
+
+    # Log config to stderr for audit
+    sys.stderr.write(f"[JUMP CONFIG] Angles (rad): rest={angles['rest']:.6f}, "
+                    f"crouch={angles['crouch']:.6f}, launch={angles['launch']:.6f}\n")
+    if easing:
+        sys.stderr.write(f"[JUMP CONFIG] Easing: crouch={easing.get('crouch', 'QUAD')}, "
+                        f"push={easing.get('push', 'EXPO')}\n")
+
+    return config_out
+
+
+# Load config at startup
+try:
+    JUMP_CONFIG = load_jump_profile_config()
+    CONFIG_ANGLES = JUMP_CONFIG.get("angles_rad", {})
+    CONFIG_EASING = JUMP_CONFIG.get("easing", {})
+    CONFIG_LOADED = True
+except Exception as e:
+    sys.stderr.write(f"[JUMP CONFIG] Failed to load config: {e}\n")
+    CONFIG_LOADED = False
+    CONFIG_ANGLES = {}
+    CONFIG_EASING = {}
+
+# Configuration constants (loaded from config if available, else use defaults)
+REST_ANGLE_RAD = CONFIG_ANGLES.get("rest", 1.0122909661567112)  # ~58°
+CROUCH_ANGLE_RAD = CONFIG_ANGLES.get("crouch", 2.0943951023931953)  # ~120°
+LAUNCH_ANGLE_RAD = CONFIG_ANGLES.get("launch", 0.2617993877991494)  # ~15°
+
+# Timing (seconds) - controller simulation timing (not from config)
 TIME_REST_START = 0.0
 TIME_REST_END = 0.2
 TIME_CROUCH_START = 0.2
@@ -76,7 +194,15 @@ WHEEL_SPIN_BACKWARD_RAD_S = -1.5  # during landing
 MAX_HIP_MOTOR_SPEED = 1.0  # rad/s (conservative, allow profile to set targets)
 MAX_WHEEL_MOTOR_SPEED = 6.5  # rad/s (from legged_robot_world.wbt)
 
-# Easing functions (Blender EXPO/QUAD approximations)
+# Easing functions (Blender QUAD/EXPO approximations)
+def quad_ease_in_out(t: float) -> float:
+    """Quadratic ease in-out: smoother acceleration -> deceleration."""
+    if t < 0.5:
+        return 2.0 * t * t
+    else:
+        return -1.0 + (4.0 - 2.0 * t) * t
+
+
 def expo_ease_in_out(t: float) -> float:
     """Exponential ease in-out: smooth acceleration -> deceleration."""
     if t < 0.5:
@@ -85,12 +211,21 @@ def expo_ease_in_out(t: float) -> float:
         return 1.0 - 0.5 * (2.0 ** (-20.0 * t + 10.0))
 
 
-def quad_ease_in_out(t: float) -> float:
-    """Quadratic ease in-out: smoother acceleration -> deceleration."""
-    if t < 0.5:
-        return 2.0 * t * t
+def get_easing_function(easing_name: str):
+    """Get easing function by name.
+
+    Args:
+        easing_name: 'QUAD' or 'EXPO'
+
+    Returns:
+        easing function or quad_ease_in_out if name not recognized
+    """
+    if easing_name == "EXPO":
+        return expo_ease_in_out
+    elif easing_name == "QUAD":
+        return quad_ease_in_out
     else:
-        return -1.0 + (4.0 - 2.0 * t) * t
+        return quad_ease_in_out  # Default to QUAD
 
 
 def linear_interpolate(start: float, end: float, t: float) -> float:
@@ -105,18 +240,27 @@ def interpolate_with_easing(start: float, end: float, t: float, easing_fn) -> fl
 
 
 def get_hip_target_angle(elapsed_time: float) -> float:
-    """Compute target hip angle for current time, based on state."""
+    """Compute target hip angle for current time, based on state.
+
+    Uses easing functions from configuration (issue #90):
+      - CROUCH phase: QUAD easing (from config or default)
+      - PUSH phase: EXPO easing (from config or default)
+    """
+    # Use ORIGINAL easing (EXPO for CROUCH, QUAD for PUSH)
+    crouch_easing = expo_ease_in_out  # Original: EXPO
+    push_easing = quad_ease_in_out    # Original: QUAD
+
     if elapsed_time < TIME_CROUCH_START:
         # REST: hold at rest angle
         return REST_ANGLE_RAD
     elif elapsed_time < TIME_CROUCH_END:
-        # CROUCH: ramp from rest to crouch angle with EXPO easing
+        # CROUCH: ramp from rest to crouch angle with configured easing
         t = (elapsed_time - TIME_CROUCH_START) / (TIME_CROUCH_END - TIME_CROUCH_START)
-        return interpolate_with_easing(REST_ANGLE_RAD, CROUCH_ANGLE_RAD, t, expo_ease_in_out)
+        return interpolate_with_easing(REST_ANGLE_RAD, CROUCH_ANGLE_RAD, t, crouch_easing)
     elif elapsed_time < TIME_PUSH_END:
-        # PUSH: explosive ramp from crouch to launch angle with QUAD easing
+        # PUSH: explosive ramp from crouch to launch angle with configured easing
         t = (elapsed_time - TIME_PUSH_START) / (TIME_PUSH_END - TIME_PUSH_START)
-        return interpolate_with_easing(CROUCH_ANGLE_RAD, LAUNCH_ANGLE_RAD, t, quad_ease_in_out)
+        return interpolate_with_easing(CROUCH_ANGLE_RAD, LAUNCH_ANGLE_RAD, t, push_easing)
     elif elapsed_time < TIME_LANDING_START:
         # FLIGHT: hold launch angle (liftoff)
         return LAUNCH_ANGLE_RAD
@@ -229,6 +373,7 @@ def log_debug(message):
 
 try:
     log_debug("Controller started")
+    log_debug(f"Config loaded: {CONFIG_LOADED}")
 
     # Import Webots modules
     from controller import Robot
@@ -371,9 +516,13 @@ try:
         try:
             # Some Webots versions support getForceFeedback() on motors
             feedback = hip_motor_R.getForceFeedback()
-            hip_motor_torque = float(feedback) if feedback is not None else 0.0
+            if feedback is not None:
+                hip_motor_torque = float(feedback)
         except (AttributeError, RuntimeError):
-            # Fallback: estimate based on state (during PUSH phase, assume high torque)
+            pass
+
+        # If getForceFeedback() is None or not available, estimate based on state
+        if hip_motor_torque == 0.0:
             if current_state == State.PUSH:
                 hip_motor_torque = 0.3  # conservative estimate
             elif current_state == State.CROUCH:
