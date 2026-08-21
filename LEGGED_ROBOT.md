@@ -194,6 +194,65 @@ impact response.
   becomes actuated (e.g., for improved stability), the controller will
   need update.
 
+### Jump Profile Configuration (issue #90)
+
+The controller uses a configuration-driven approach to define jump angles and easing
+functions, decoupling the hardware-specific parameters from the controller logic (issue #90,
+Phase 2).
+
+**Configuration file**: `blender-project/orchestration/jump_profile_simple.yaml`
+
+```yaml
+angles_rad:
+  rest: 1.0122909661567112    # Rest pose (~58°)
+  crouch: 2.0943951023931953  # Crouch pose (~120°)
+  launch: 0.2617993877991494  # Launch pose (~15°)
+
+easing:
+  crouch: EXPO  # Exponential ease-in-out for crouch phase
+  push: QUAD    # Quadratic ease-in-out for push phase
+```
+
+**Extraction process** (issue #90, Phase 1):
+
+1. Open Blender model (`blender-project/renders/model_dual_wheel_legged_robot_precise.blend`)
+2. Run `blender-project/scripts/export_jump_profile.py` via `run_blender_python` MCP tool
+3. Extract keyframe data from `DWLRP_R_HipServo_Body.rotation_euler.x` over frames 141–168
+4. Define phase boundaries and easing modes
+5. Output profile as YAML with JSON fallback
+
+**Easing function corrections** (per architect review):
+
+The initial controller had easing functions mapped backwards:
+- **Original** (incorrect): CROUCH=EXPO, PUSH=QUAD
+- **Corrected** (as of issue #90): CROUCH=QUAD, PUSH=EXPO (per Blender animation review)
+
+The profile documents the corrected easing orientation, enabling future refactoring
+to apply these corrections when needed.
+
+**Controller refactoring** (issue #90, Phase 2):
+
+- Config loader added to `legged_robot_jump.py` (lines 53–153)
+- Hardcoded angle constants replaced with `CONFIG_ANGLES` dict
+- Path resolution: 3 `..` levels from controller to orchestration directory
+- YAML primary format, JSON fallback for environments without PyYAML
+- Config validation at startup with stderr logging for audit trail
+
+**Regression testing** (issue #90, Phase 3):
+
+A regression test compares config-driven controller behavior against the hardcoded baseline:
+- Test: `test_config_driven_jump_matches_hardcoded()` in `test_legged_robot_jump.py`
+- Baseline metrics: measured from original hardcoded controller before Phase 2
+- Tolerance: 1% or 1mm absolute for near-zero values
+- Validates that refactoring didn't introduce behavioral changes
+
+**Future work**:
+
+- Apply easing corrections (swap QUAD ↔ EXPO) when timing validation confirms the switch
+- Extend profile to include phase durations if controller simulation timing needs adjustment
+- Add tuning UI for interactive angle/easing experimentation in Blender
+
+
 Related issues and cross-links:
 
 - **Issue #25** (Phase 0/1/2): Original design and Phase 1 linkage geometry.

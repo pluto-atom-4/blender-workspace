@@ -1,0 +1,12 @@
+# Jump profile configuration for legged_robot_jump controller
+# Extracted from Blender animation (issue #90)
+# Angles and easing functions to use during jump sequence
+
+angles_rad:
+  rest: 1.0122909661567112    # Rest pose (~58°) - matches original controller
+  crouch: 2.0943951023931953  # Crouch pose (~120°) - matches original controller
+  launch: 0.2617993877991494  # Launch pose (~15°) - matches original controller
+
+easing:
+  crouch: EXPO  # Exponential ease-in-out for crouch phase (original)
+  push: QUAD    # Quadratic ease-in-out for push phase (original)
