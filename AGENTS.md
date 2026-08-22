@@ -11,11 +11,17 @@ deny→ask→allow tiers plus a `PreToolUse` hook blocking destructive Bash
 
 ## Agent roles and handover
 
-`ARCHITECT → CODER → REVIEWER → HUMAN (merge)`; Gate 1 (plan) before code,
-Gate 2 (verification) before merge. Roles are defined authoritatively in
-`.claude/agents/{architect,coder,reviewer}.md`: architect plans (read-only),
-coder implements `src/`+`tests/` (never governance files), reviewer verifies
-(read-only, can't merge).
+`ARCHITECT → CODER → REVIEWER (creates PR) → HUMAN (review/merge)`.
+- Gate 1: Plan approval before code (architect + human)
+- Gate 2: Verification before PR (reviewer verifies + creates PR if passed)
+- Gate 3: Human review + merge on GitHub
+
+Roles defined in `.claude/agents/{architect,coder,reviewer}.md`:
+- **Architect:** Plans (read-only), uses AskUserQuestion to clarify ambiguities, posts plan to issue for approval
+- **Coder:** Implements `src/`+`tests/` (forbidden from governance files), pushes branch
+- **Reviewer:** Verifies against checklist, creates PR if approved (via `gh pr create`), posts PR link to issue
+
+Workflow prevents duplicate PRs: only reviewer creates them, after verification.
 
 ## Branching / isolation policy
 
@@ -69,9 +75,21 @@ never substitute silently. It's a stated requirement, not an agent's call.
 
 ## Project skills
 
-Claude Code auto-discovers `.claude/skills/<name>/SKILL.md` (name +
-description frontmatter) — see [SKILLS.md](SKILLS.md) for the current
-inventory of both agent skills and Blender scripts.
+Claude Code auto-discovers `.claude/skills/<name>/SKILL.md` by scanning
+frontmatter metadata (name + description). **Discovery is not path-conditional** —
+the skill loader indexes by frontmatter, independent of directory structure or agent role.
+
+Each skill's `SKILL.md` must include YAML frontmatter:
+```yaml
+---
+name: skill-identifier
+description: One-line description (shown in skill picker)
+---
+```
+
+Skills are invoked per-task by any agent needing them (architect plans,
+coder implements, reviewer verifies). See [SKILLS.md](SKILLS.md) for the
+current inventory of agent skills and Blender scripts.
 
 ## Naming conventions
 
