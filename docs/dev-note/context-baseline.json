@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-08-17T10:34:30.137707",
+  "timestamp": "2026-08-22T14:39:40.008132",
   "files": [
     {
       "path": "CLAUDE.md",
@@ -9,7 +9,7 @@
       "budget": 1500,
       "status": "compliant",
       "percent_of_budget": 27.266666666666666,
-      "last_modified": "2026-08-16T19:38:19.327446"
+      "last_modified": "2026-08-17T19:09:11.290695"
     },
     {
       "path": "DESIGN.md",
@@ -23,13 +23,13 @@
     },
     {
       "path": "AGENTS.md",
-      "lines": 80,
-      "chars": 3497,
-      "tokens_estimated": 874,
+      "lines": 92,
+      "chars": 3911,
+      "tokens_estimated": 977,
       "budget": 1000,
       "status": "compliant",
-      "percent_of_budget": 87.4,
-      "last_modified": "2026-08-16T19:48:49.254570"
+      "percent_of_budget": 97.7,
+      "last_modified": "2026-08-22T14:39:38.347936"
     },
     {
       "path": ".github/copilot-instructions.md",
@@ -39,17 +39,17 @@
       "budget": 1000,
       "status": "compliant",
       "percent_of_budget": 60.8,
-      "last_modified": "2026-08-16T19:48:43.174540"
+      "last_modified": "2026-08-17T19:09:11.290695"
     },
     {
       "path": ".claude/skills/pre-commit-enforce/SKILL.md",
-      "lines": 199,
-      "chars": 4172,
-      "tokens_estimated": 1043,
+      "lines": 205,
+      "chars": 4353,
+      "tokens_estimated": 1088,
       "budget": null,
       "status": "info",
       "percent_of_budget": null,
-      "last_modified": "2026-07-26T16:40:37.405997"
+      "last_modified": "2026-08-22T14:24:56.443563"
     },
     {
       "path": ".claude/skills/render-multi-angle/SKILL.md",
@@ -67,9 +67,9 @@
     "compliant": 4,
     "warnings": 0,
     "over_budget": 0,
-    "total_tokens": 4738,
+    "total_tokens": 4886,
     "total_budget": 6500,
-    "utilization_percent": 52.7
+    "utilization_percent": 54.3
   },
   "warnings": [],
   "errors": []

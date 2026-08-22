@@ -1,10 +1,43 @@
 # Skills / Automations
 
-Inventory of the generative scripts currently in
-`blender-project/scripts/`. Each is a standalone Blender Python automation
-run through the `run_blender_python` MCP tool.
+Inventory of the generative scripts and reusable automation skills currently in
+`blender-project/scripts/` and `.claude/skills/`.
 
-## Tamiya pendulum
+## Agent Skills
+
+Reusable automation shortcuts discoverable by Claude Code and Copilot.
+
+### render-multi-angle
+
+Render an existing Blender model from multiple camera angles.
+
+- **Location:** `.claude/skills/render-multi-angle/SKILL.md`
+- **Purpose:** Run `render_<subject>[_<angle>].py` scripts to produce standard preview PNGs.
+- **Callable by:** Coder agent
+- **Workflow:**
+  1. `render_<subject>.py` — default angle
+  2. `render_<subject>_front.py` — front view
+  3. `render_<subject>_side.py` — side view
+  4. `render_<subject>_top.py` — top view
+- **Output:** Four PNGs in `blender-project/renders/` named `<subject>_preview[_<angle>].png`
+- **Note:** If an angle script doesn't exist yet for the requested subject, write it following the pattern of existing scripts for that subject rather than skipping the angle.
+
+### pre-commit-enforce
+
+Install and configure git pre-commit hooks to enforce branch protection.
+
+- **Location:** `.claude/skills/pre-commit-enforce/SKILL.md`
+- **Purpose:** Block commits directly to protected branches and enforce feature branch workflow.
+- **Callable by:** Coder (setup/config), Architect (planning)
+- **Configuration:** Via `.claude/settings.json` `skillConfigs.pre-commit-enforce`
+- **Default:** Protects `main` branch by default
+- **Related:** AGENTS.md branching policy, CLAUDE.md workflow
+
+## Blender Scripts
+
+Standalone Python automations run via the `run_blender_python` MCP tool.
+
+### Tamiya pendulum
 
 | Script | Purpose |
 |---|---|
@@ -21,7 +54,7 @@ run through the `run_blender_python` MCP tool.
 Outputs land in `blender-project/renders/` as `<subject>_preview[_<angle>].png`
 alongside the source `.blend` file.
 
-## Armed inverted pendulum (issue #21)
+### Armed inverted pendulum (issue #21)
 
 Two-wheel-leg self-balancing robot with STS3032 hip servos, XL330
 wheel-actuator servos, rigid-body physics, and a PID balance controller.
@@ -36,7 +69,7 @@ Full writeup: [PENDULUM.md](PENDULUM.md).
 | `render_pendulum_side.py` | Side-view render (loads `pendulum.blend`). |
 | `render_pendulum_top.py` | Top-view render (loads `pendulum.blend`). |
 
-## Dual-wheel legged balancing robot (issue #23)
+### Dual-wheel legged balancing robot (issue #23)
 
 XGO-style dual-wheel legged balancing robot: CNC-mm-accurate chassis,
 STS3032 hip/knee servos, a 4-bar leg linkage, and a driven wheel, built
@@ -53,7 +86,7 @@ There are no separate `render_dual_wheel_legged_robot*.py` scripts for
 this feature — both model scripts persist their own `.blend` under
 `blender-project/renders/` directly when run headless.
 
-## Physics simulation & LQR tuning (issue #28)
+### Physics simulation & LQR tuning (issue #28)
 
 Trimmed Phase-1 slice of the Webots + LQR control pipeline proposed in issue
 #28: exports the existing armed inverted pendulum geometry (issue #21) into
@@ -78,9 +111,31 @@ than a monolithic root environment.
 - `blender-project/assets/hq720.jpg` — reference image used while modeling
   the Tamiya pendulum and the armed inverted pendulum (issue #21).
 
-## Adding a new skill
+## Adding a new skill or script
 
-1. Add `model_<subject>.py` to build and save the `.blend`.
-2. Add one or more `render_<subject>[_<angle>].py` scripts to produce preview
-   PNGs.
-3. Update this table.
+### Adding a Blender Script
+
+1. Write `model_<subject>.py` to build and save the `.blend`.
+2. Write one or more `render_<subject>[_<angle>].py` scripts to produce preview PNGs.
+3. Update this table (SKILLS.md).
+
+### Adding an Agent Skill
+
+1. Create directory `.claude/skills/<skill-name>/` with:
+   - `SKILL.md` (with YAML frontmatter: `name:` and `description:`)
+   - Supporting files (scripts, config templates, setup instructions)
+2. Update the Agent Skills section of this file.
+3. Optionally register in `.claude/agents/{architect,coder,reviewer}.md` if role-specific.
+
+### Skill Frontmatter Template
+
+```yaml
+---
+name: skill-identifier
+description: One-line human-readable description for skill picker
+---
+
+# Skill Name
+
+...rest of documentation...
+```

@@ -69,9 +69,21 @@ never substitute silently. It's a stated requirement, not an agent's call.
 
 ## Project skills
 
-Claude Code auto-discovers `.claude/skills/<name>/SKILL.md` (name +
-description frontmatter) — see [SKILLS.md](SKILLS.md) for the current
-inventory of both agent skills and Blender scripts.
+Claude Code auto-discovers `.claude/skills/<name>/SKILL.md` by scanning
+frontmatter metadata (name + description). **Discovery is not path-conditional** —
+the skill loader indexes by frontmatter, independent of directory structure or agent role.
+
+Each skill's `SKILL.md` must include YAML frontmatter:
+```yaml
+---
+name: skill-identifier
+description: One-line description (shown in skill picker)
+---
+```
+
+Skills are invoked per-task by any agent needing them (architect plans,
+coder implements, reviewer verifies). See [SKILLS.md](SKILLS.md) for the
+current inventory of agent skills and Blender scripts.
 
 ## Naming conventions
 
