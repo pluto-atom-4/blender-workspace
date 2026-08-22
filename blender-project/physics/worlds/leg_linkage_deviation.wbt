@@ -1,0 +1,30 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation -0.03177750304697233 0.01695600639546385 0.9993511315584811 2.1484701068416032
+  position 0.3167884015647188 -0.46043507021139646 0.09567773917559205
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 2 2
+  floorTileSize 0.2 0.2
+}
+Solid {
+  translation -0.180375 0.007649 0.048801
+  children [
+    CadShape {
+      url [
+        "../../assets/leg_linkage_deviation.obj"
+      ]
+    }
+  ]
+}
