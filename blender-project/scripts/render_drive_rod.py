@@ -261,12 +261,69 @@ def main():
                 all_pngs_valid = False
                 all_exist = False
 
-    if all_exist and all_pngs_valid:
+    # Phase 2: Per-Render Pixel Analysis (P4), Histogram/Contrast Validation (P7), Cross-Render Consistency (P8)
+    print("\n=== VALIDATION: Phase 2 - Per-Render Analysis & Consistency ===")
+
+    render_brightness = {}
+    all_brightness_ok = True
+    all_contrast_ok = True
+    consistency_ok = True
+
+    for path in render_paths:
+        if not os.path.exists(path):
+            continue
+
+        # P4: Per-Render Pixel Analysis
+        stats = analyze_render_pixels(path)
+        if not stats:
+            print(f"  WARNING: Could not analyze {path}")
+            continue
+
+        brightness = stats['overall_brightness']
+        render_name = os.path.basename(path).replace('.png', '')
+        render_brightness[render_name] = brightness
+
+        # Check brightness threshold
+        if brightness >= 100:
+            print(f"  BRIGHTNESS_OK: {render_name} brightness {brightness}/255")
+        else:
+            print(f"  BRIGHTNESS_LOW: {render_name} brightness {brightness}/255 (threshold: ≥100)")
+            all_brightness_ok = False
+
+        # P7: Histogram/Contrast Validation
+        r_range = stats['R']['max'] - stats['R']['min']
+        g_range = stats['G']['max'] - stats['G']['min']
+        b_range = stats['B']['max'] - stats['B']['min']
+
+        if r_range >= 50 and g_range >= 50 and b_range >= 50:
+            print(f"  CONTRAST_OK: {render_name} R_range={r_range}, G_range={g_range}, B_range={b_range}")
+        else:
+            print(f"  LOW_CONTRAST: {render_name} R_range={r_range}, G_range={g_range}, B_range={b_range} (threshold: ≥50 each)")
+            all_contrast_ok = False
+
+    # P8: Cross-Render Consistency Check
+    if render_brightness:
+        min_brightness = min(render_brightness.values())
+        max_brightness = max(render_brightness.values())
+        variance = max_brightness - min_brightness
+
+        if variance <= 30:
+            print(f"\n  CONSISTENCY_OK: Brightness variance {variance}/255 across angles")
+            print(f"    Front={render_brightness.get('drive_rod_front', 'N/A')}, Side={render_brightness.get('drive_rod_side', 'N/A')}, Isometric={render_brightness.get('drive_rod_isometric', 'N/A')}, Back/Left={render_brightness.get('drive_rod_back_left', 'N/A')}")
+        else:
+            print(f"\n  BRIGHTNESS_INCONSISTENT: Variance {variance}/255 across angles (threshold: ≤30)")
+            print(f"    Front={render_brightness.get('drive_rod_front', 'N/A')}, Side={render_brightness.get('drive_rod_side', 'N/A')}, Isometric={render_brightness.get('drive_rod_isometric', 'N/A')}, Back/Left={render_brightness.get('drive_rod_back_left', 'N/A')}")
+            consistency_ok = False
+
+    if all_exist and all_pngs_valid and all_brightness_ok and all_contrast_ok and consistency_ok:
         print("\n=== FINAL RESULT: SUCCESS ===")
         print("All renders complete and validated:")
         print("  - P2: Output directory writable ✓")
-        print("  - P3: File sizes in range [50KB–500KB] ✓")
+        print("  - P3: File sizes in range [100KB–1.5MB] ✓")
         print("  - P1: PNG files not corrupted ✓")
+        print("  - P4: Per-render brightness ≥100/255 ✓")
+        print("  - P7: Histogram contrast (range ≥50 per channel) ✓")
+        print("  - P8: Cross-render brightness consistency (variance ≤30) ✓")
         return True
     else:
         print("\n=== FINAL RESULT: FAILURE ===")
@@ -276,6 +333,12 @@ def main():
             print("  - P3: Some files have wrong sizes ✗")
         if not all_pngs_valid:
             print("  - P1: Some PNG files are corrupted ✗")
+        if not all_brightness_ok:
+            print("  - P4: Some renders have low brightness ✗")
+        if not all_contrast_ok:
+            print("  - P7: Some renders have low contrast ✗")
+        if not consistency_ok:
+            print("  - P8: Brightness inconsistency across angles ✗")
         return False
 
 
