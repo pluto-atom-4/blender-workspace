@@ -54,11 +54,11 @@ def setup_world_lighting():
     world = bpy.data.worlds["World"]
     world.use_nodes = True
     bg = world.node_tree.nodes["Background"]
-    bg.inputs[0].default_value = (0.9, 0.9, 0.95, 1.0)  # light gray
-    bg.inputs[1].default_value = 1.2  # strength
+    bg.inputs[0].default_value = (0.05, 0.05, 0.06, 1.0)  # dark gray (issue #106 fix)
+    bg.inputs[1].default_value = 3.0  # increased strength to compensate for darker background
 
 
-def create_key_light(strength=2.0, location=(30, 30, 40)):
+def create_key_light(strength=5.0, location=(50, 30, 50)):
     """Add a key light (sun lamp) for shading."""
     light_data = bpy.data.lights.new(name="KeyLight", type='SUN')
     light_data.energy = strength
@@ -68,9 +68,20 @@ def create_key_light(strength=2.0, location=(30, 30, 40)):
     return light_obj
 
 
+def create_fill_light(strength=5.0, location=(0, -60, 30)):
+    """Add a fill light (SUN lamp) opposite side view camera to create contrast on side view."""
+    light_data = bpy.data.lights.new(name="FillLight", type='SUN')
+    light_data.energy = strength
+    light_obj = bpy.data.objects.new(name="FillLight", object_data=light_data)
+    bpy.context.collection.objects.link(light_obj)
+    light_obj.location = location
+    return light_obj
+
+
 def render_view(name, camera_location, camera_lookat, render_path):
     """
     Render a single view from camera_location looking at camera_lookat.
+    Uses TRACK_TO constraint for proper look-at behavior (issue #106 fix).
 
     Args:
         name: descriptive name (e.g., "Front View")
@@ -88,15 +99,28 @@ def render_view(name, camera_location, camera_lookat, render_path):
     else:
         cam_obj = bpy.data.objects["RenderCamera"]
 
-    # Position and orient camera
+    # Position camera
     cam_obj.location = camera_location
-    direction = (camera_lookat[0] - camera_location[0],
-                 camera_lookat[1] - camera_location[1],
-                 camera_lookat[2] - camera_location[2])
-    cam_obj.rotation_euler = (math.atan2(direction[2],
-                                          math.sqrt(direction[0]**2 + direction[1]**2)),
-                              0,
-                              math.atan2(direction[1], direction[0]))
+
+    # Create or reuse camera target empty
+    if "RenderCameraTarget" not in bpy.data.objects:
+        empty_target = bpy.data.objects.new("RenderCameraTarget", None)
+        bpy.context.collection.objects.link(empty_target)
+    else:
+        empty_target = bpy.data.objects["RenderCameraTarget"]
+
+    empty_target.location = camera_lookat
+
+    # Apply TRACK_TO constraint (replaces hand-rolled euler rotation, issue #106 fix)
+    # Remove old constraints to avoid stacking
+    for constraint in cam_obj.constraints:
+        if constraint.type == 'TRACK_TO':
+            cam_obj.constraints.remove(constraint)
+
+    constraint = cam_obj.constraints.new(type='TRACK_TO')
+    constraint.target = empty_target
+    constraint.track_axis = 'TRACK_NEGATIVE_Z'
+    constraint.up_axis = 'UP_Y'
 
     scene.camera = cam_obj
     scene.render.filepath = render_path
@@ -172,6 +196,26 @@ def analyze_render_pixels(image_path):
     stats['overall_brightness'] = int(brightness)
 
     return stats
+
+
+def validate_contrast(stats, render_name, threshold=50):
+    """
+    Validate contrast in a render via histogram/range check.
+    Returns True if contrast passes (all channels have range >= threshold).
+    """
+    if not stats:
+        return False
+
+    r_range = stats['R']['max'] - stats['R']['min']
+    g_range = stats['G']['max'] - stats['G']['min']
+    b_range = stats['B']['max'] - stats['B']['min']
+
+    if r_range >= threshold and g_range >= threshold and b_range >= threshold:
+        print(f"  CONTRAST_OK: {render_name} R_range={r_range}, G_range={g_range}, B_range={b_range}")
+        return True
+    else:
+        print(f"  LOW_CONTRAST: {render_name} R_range={r_range}, G_range={g_range}, B_range={b_range} (threshold: ≥{threshold} each)")
+        return False
 
 
 def main():
@@ -251,9 +295,10 @@ def main():
     setup_render_settings()
     setup_world_lighting()
     create_key_light()
+    create_fill_light()
 
-    # Single-frame test at low samples for pixel verification
-    print("\n=== PIXEL VERIFICATION TEST ===")
+    # Single-frame test at low samples for pixel verification + contrast validation (issue #106 pre-flight)
+    print("\n=== PIXEL VERIFICATION TEST (Pre-flight Contrast Check) ===")
     print("Rendering single frame at low samples for pixel statistics...")
     setup_render_settings(samples=8)  # Low samples for fast test
 
@@ -274,6 +319,13 @@ def main():
             return False
         else:
             print(f"\nPASS: Brightness {stats['overall_brightness']}/255 exceeds threshold")
+
+        # Contrast validation in pre-flight test (issue #106 fix)
+        if not validate_contrast(stats, "test_frame", threshold=50):
+            print(f"\nERROR: Test frame has low contrast. DO NOT proceeding to full renders.")
+            return False
+        else:
+            print(f"\nPASS: Test frame contrast passes threshold")
     else:
         print("WARNING: Could not analyze pixel statistics; proceeding with caution")
 
@@ -346,15 +398,8 @@ def main():
             print(f"  BRIGHTNESS_LOW: {render_name} brightness {brightness}/255 (threshold: ≥100)")
             all_brightness_ok = False
 
-        # P7: Histogram/Contrast Validation
-        r_range = stats['R']['max'] - stats['R']['min']
-        g_range = stats['G']['max'] - stats['G']['min']
-        b_range = stats['B']['max'] - stats['B']['min']
-
-        if r_range >= 50 and g_range >= 50 and b_range >= 50:
-            print(f"  CONTRAST_OK: {render_name} R_range={r_range}, G_range={g_range}, B_range={b_range}")
-        else:
-            print(f"  LOW_CONTRAST: {render_name} R_range={r_range}, G_range={g_range}, B_range={b_range} (threshold: ≥50 each)")
+        # P7: Histogram/Contrast Validation (reuse validate_contrast helper)
+        if not validate_contrast(stats, render_name, threshold=50):
             all_contrast_ok = False
 
     # P8: Cross-Render Consistency Check
