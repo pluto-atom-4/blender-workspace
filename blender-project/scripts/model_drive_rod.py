@@ -26,7 +26,8 @@ Sections:
   2. Mesh primitives (bmesh capsule bar, cylinder for pins)
   3. Component builders (flat bar with rounded edges, pivot pins)
   4. Assembly: bar + 2 pins
-  5. Main
+  5. Viewport configuration (hide Cube, set zoom)
+  6. Main
 """
 
 import bpy
@@ -361,11 +362,44 @@ def build_assembly(collection):
 
 
 # ---------------------------------------------------------------------------
-# 5. Main
+# 5. Viewport configuration
+# ---------------------------------------------------------------------------
+
+def configure_viewport():
+    """
+    Configure viewport settings:
+    - Hide the Cube object from the viewport
+    - Set viewport zoom to 10x
+    """
+    # Hide Cube object
+    if "Cube" in bpy.data.objects:
+        cube = bpy.data.objects["Cube"]
+        cube.hide_viewport = True
+        cube.hide_render = True
+        print("Hidden Cube from viewport")
+
+    # Set viewport zoom to 10x
+    for area in bpy.context.screen.areas:
+        if area.type == 'VIEW_3D':
+            for space in area.spaces:
+                if space.type == 'VIEW_3D':
+                    # Set view_camera_zoom to 10.0 for 10x zoom
+                    if hasattr(space, 'region_3d') and space.region_3d:
+                        if hasattr(space.region_3d, 'view_camera_zoom'):
+                            space.region_3d.view_camera_zoom = 10.0
+                            print("Set viewport zoom to 10x (view_camera_zoom = 10.0)")
+
+                        if hasattr(space.region_3d, 'view_zoom'):
+                            space.region_3d.view_zoom = 10.0
+                            print("Set viewport zoom to 10x (view_zoom = 10.0)")
+
+
+# ---------------------------------------------------------------------------
+# 6. Main
 # ---------------------------------------------------------------------------
 
 def main():
-    """Main entry point: clean up previous builds, build assembly, save."""
+    """Main entry point: clean up previous builds, build assembly, configure viewport, save."""
     # Clean up previous builds
     clear_previous()
 
@@ -374,6 +408,9 @@ def main():
 
     # Build assembly
     assembly = build_assembly(collection)
+
+    # Configure viewport (hide Cube, set zoom)
+    configure_viewport()
 
     # Save .blend file when running headless
     if bpy.app.background:
