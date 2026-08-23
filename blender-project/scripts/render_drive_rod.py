@@ -189,7 +189,63 @@ def main():
     # Build model
     print("\n=== Building Model ===")
     print("Building drive rod model...")
-    build_model()
+
+    # P5: Model Build Exception Handling
+    try:
+        build_model()
+    except Exception as e:
+        print(f"ERROR: Model build failed: {type(e).__name__}: {str(e)}")
+        return False
+
+    # P6: Geometry Validation
+    print("\n=== VALIDATION: Geometry (P6) ===")
+    required_objects = ["DR_FlatBar", "DR_PivotPinFront", "DR_PivotPinBack"]
+
+    for obj_name in required_objects:
+        if obj_name not in bpy.data.objects:
+            print(f"ERROR: Geometry validation failed: {obj_name}: object not found")
+            return False
+
+    # Validate DR_FlatBar geometry
+    flatbar = bpy.data.objects["DR_FlatBar"]
+    flatbar_mesh = flatbar.data
+    vertex_count = len(flatbar_mesh.vertices)
+    face_count = len(flatbar_mesh.polygons)
+
+    if vertex_count < 50 or vertex_count > 100:
+        print(f"ERROR: Geometry validation failed: DR_FlatBar: vertex count {vertex_count} (expected 50-100)")
+        return False
+
+    if face_count == 0:
+        print(f"ERROR: Geometry validation failed: DR_FlatBar: has 0 faces")
+        return False
+
+    # Validate bounding box (approximate 81.5mm = 0.0815 in Blender meters)
+    bounds = [v.co for v in flatbar_mesh.vertices]
+    if bounds:
+        xs = [v[0] for v in bounds]
+        ys = [v[1] for v in bounds]
+        zs = [v[2] for v in bounds]
+        x_len = max(xs) - min(xs)
+        y_len = max(ys) - min(ys)
+        z_len = max(zs) - min(zs)
+
+        # Check that one dimension is approximately 0.0815 (81.5mm in Blender units where 1mm=0.001)
+        lengths = sorted([x_len, y_len, z_len])
+        if lengths[-1] < 0.075 or lengths[-1] > 0.090:
+            print(f"ERROR: Geometry validation failed: DR_FlatBar: max bounds {lengths[-1]:.4f} (expected ~0.0815, tolerance 0.075-0.090)")
+            return False
+
+    # Validate pivot pins have faces
+    for pin_name in ["DR_PivotPinFront", "DR_PivotPinBack"]:
+        pin = bpy.data.objects[pin_name]
+        pin_mesh = pin.data
+        pin_face_count = len(pin_mesh.polygons)
+        if pin_face_count == 0:
+            print(f"ERROR: Geometry validation failed: {pin_name}: has 0 faces")
+            return False
+
+    print("  OK: All geometry checks passed (3 objects, vertex/face/bounds validated)")
 
     # Set up rendering
     setup_render_settings()
