@@ -247,7 +247,7 @@ def build_flat_bar(collection):
         profile_verts.append(v)
 
     # Bottom-left corner arc
-    for i in range(1, 8):
+    for i in range(1, 9):
         angle = (i / 8.0) * (math.pi / 2)
         y = -half_w + corner_r - corner_r * math.cos(angle)
         z = -half_t + corner_r - corner_r * math.sin(angle)

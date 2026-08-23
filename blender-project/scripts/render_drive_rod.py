@@ -18,12 +18,12 @@ Reference: issue #106 Phase 1 scope
 
 import bpy
 import math
-import subprocess
 import os
+import sys
 
 # Import the model builder
-import sys
-sys.path.insert(0, "/home/pluto-atom-4/blender-workspace/blender-project/scripts")
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, script_dir)
 from model_drive_rod import main as build_model
 
 OUTPUT_DIR = "/home/pluto-atom-4/blender-workspace/blender-project/renders"
@@ -92,9 +92,8 @@ def render_view(name, camera_location, camera_lookat, render_path):
     direction = (camera_lookat[0] - camera_location[0],
                  camera_lookat[1] - camera_location[1],
                  camera_lookat[2] - camera_location[2])
-    rot_quat = bpy.context.view_layer.objects.active.matrix_world.to_quaternion()
-    cam_obj.rotation_euler = (-math.atan2(direction[2],
-                                           math.sqrt(direction[0]**2 + direction[1]**2)),
+    cam_obj.rotation_euler = (math.atan2(direction[2],
+                                          math.sqrt(direction[0]**2 + direction[1]**2)),
                               0,
                               math.atan2(direction[1], direction[0]))
 
