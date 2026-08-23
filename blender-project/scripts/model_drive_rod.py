@@ -8,7 +8,7 @@ to the thigh rod via dual-shear parallel linkage.
 Structure:
   - Main bar: rectangular cross-section with rounded edges (bmesh capsule profile)
   - Two pivot pins: cylinders at each end for assembly/joint context
-  - Pivot pins positioned on the side (Y direction) for side attachment
+  - Pivot pins positioned on top (Z direction) for top attachment
   - Solid construction (no lightening slots)
 
 Dimensions (measured from reference image using servo scale anchor):
@@ -17,7 +17,7 @@ Dimensions (measured from reference image using servo scale anchor):
   - Thickness: 3.5mm (estimated from proportions in reference)
   - Pivot pin radius: 1.5mm (bolt hole scale)
   - Pivot boss height: 2.5mm (extends 1.25mm on each side)
-  - Pivot pins: positioned on the side (Y+) at bar centerline (Z=0)
+  - Pivot pins: positioned on top (Z+) with 5mm inward offset from rod ends
 
 Scale anchor: Feetech STS-3032 servo (SERVO_W=20mm, SERVO_L=40mm)
 Reference: Screenshot_20260822_191609.png (Drive Rod callout, grey bar from
@@ -27,7 +27,7 @@ Sections:
   1. Units / cleanup / materials
   2. Mesh primitives (bmesh capsule bar, cylinder for pins)
   3. Component builders (flat bar with rounded edges, pivot pins)
-  4. Assembly: bar + 2 pins (side-mounted, 90° flipped)
+  4. Assembly: bar + 2 pins (top-mounted with inward offset)
   5. Viewport configuration (hide Cube, frame model, optimize viewing)
   6. Main
 """
@@ -197,6 +197,10 @@ CORNER_RADIUS = 0.4        # mm, creates smooth rounded corners
 PIVOT_PIN_RADIUS = 1.5     # bolt hole radius
 PIVOT_PIN_HEIGHT = 2.5     # extends 1.25mm on each side from bar surface
 
+# Pivot pin positioning (top-mounted, 5mm inward from rod ends)
+PIVOT_PIN_INWARD_OFFSET = 5.0   # 5mm inward from rod ends
+PIVOT_PIN_Z_TOP = DRIVE_ROD_THICK / 2 + PIVOT_PIN_HEIGHT / 2  # on top with head protruding
+
 
 def build_flat_bar(collection):
     """
@@ -328,35 +332,39 @@ def build_assembly(collection):
     """
     Build the complete drive rod assembly:
     - Main flat bar (with rounded edges via bmesh capsule)
-    - Two pivot pins at each end (side-mounted, 90° flipped from top)
+    - Two pivot pins at each end (top-mounted with 5mm inward offset)
 
     The bar is centered at origin:
       - X: -40.75mm to +40.75mm
       - Y: -3.0mm to +3.0mm (centered)
       - Z: -1.75mm to +1.75mm (centered)
 
-    Pivot pins are positioned on the SIDE of the bar (Y+ direction):
-      - X: ±40.75mm (at the bar ends)
-      - Y: ±3.0mm (on the side surface)
-      - Z: 0.0mm (at the bar centerline)
+    Pivot pins are positioned on TOP of the bar (Z+ direction):
+      - X: ±35.75mm (5mm inward from bar ends)
+      - Y: 0.0mm (center, 3mm inward from side surface)
+      - Z: 3.0mm (on top with pin head protruding upward)
     """
 
     # Build main bar (centered at origin)
     bar = build_flat_bar(collection)
 
-    # Pivot pins positioned at bar ends on the SIDE (90° flipped from top position)
-    # Front pivot (at x = -DRIVE_ROD_LEN/2, side position)
+    # Calculate pivot pin positions
+    # X: DRIVE_ROD_LEN/2 - PIVOT_PIN_INWARD_OFFSET (5mm inward from rod ends)
+    pin_x_offset = DRIVE_ROD_LEN / 2 - PIVOT_PIN_INWARD_OFFSET
+
+    # Pivot pins positioned on TOP of the bar
+    # Front pivot (at x = -35.75mm, top position)
     front_pin = build_pivot_pin(
         f"{PREFIX}PivotPinFront",
         collection,
-        location_mm=(-DRIVE_ROD_LEN / 2, DRIVE_ROD_WIDTH / 2, 0.0)
+        location_mm=(-pin_x_offset, 0.0, PIVOT_PIN_Z_TOP)
     )
 
-    # Back pivot (at x = +DRIVE_ROD_LEN/2, side position)
+    # Back pivot (at x = +35.75mm, top position)
     back_pin = build_pivot_pin(
         f"{PREFIX}PivotPinBack",
         collection,
-        location_mm=(DRIVE_ROD_LEN / 2, DRIVE_ROD_WIDTH / 2, 0.0)
+        location_mm=(pin_x_offset, 0.0, PIVOT_PIN_Z_TOP)
     )
 
     return {
@@ -442,9 +450,9 @@ def main():
     # Build assembly
     assembly = build_assembly(collection)
     print(f"✓ Built DriveRod assembly with {len(assembly)} components")
-    print(f"  - Pivot pins are now side-mounted (90° flipped from top position)")
-    print(f"  - Front pin at x=-{DRIVE_ROD_LEN/2}mm, y=+{DRIVE_ROD_WIDTH/2}mm, z=0mm")
-    print(f"  - Back pin at x=+{DRIVE_ROD_LEN/2}mm, y=+{DRIVE_ROD_WIDTH/2}mm, z=0mm")
+    print(f"  - Pivot pins are now top-mounted (5mm inward from rod ends)")
+    print(f"  - Front pin at x=-{DRIVE_ROD_LEN/2 - PIVOT_PIN_INWARD_OFFSET}mm, y=0mm, z={PIVOT_PIN_Z_TOP}mm")
+    print(f"  - Back pin at x=+{DRIVE_ROD_LEN/2 - PIVOT_PIN_INWARD_OFFSET}mm, y=0mm, z={PIVOT_PIN_Z_TOP}mm")
 
     # Configure viewport (hide Cube, frame model, optimize viewing)
     configure_viewport()
