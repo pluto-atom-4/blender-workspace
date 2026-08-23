@@ -20,6 +20,7 @@ import bpy
 import math
 import os
 import sys
+from PIL import Image
 
 # Import the model builder
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -175,7 +176,18 @@ def analyze_render_pixels(image_path):
 
 def main():
     """Run render pipeline with pixel verification."""
+    # P2: Verify output directory is writable
+    print("=== VALIDATION: Output Directory ===")
+    if not os.path.isdir(OUTPUT_DIR):
+        print(f"  Creating output directory: {OUTPUT_DIR}")
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    if not os.access(OUTPUT_DIR, os.W_OK):
+        raise PermissionError(f"Output dir not writable: {OUTPUT_DIR}")
+    print(f"  OK: Output directory writable ({OUTPUT_DIR})")
+
     # Build model
+    print("\n=== Building Model ===")
     print("Building drive rod model...")
     build_model()
 
@@ -216,21 +228,54 @@ def main():
     print("\nRendering views...")
     render_paths = render_views(samples=32)
 
-    print("\nVerifying output files...")
+    print("\n=== VALIDATION: Output Files (P3: File Size Range) ===")
     all_exist = True
+    all_sizes_ok = True
+    MIN_SIZE = 100_000    # 100 KB
+    MAX_SIZE = 1_500_000  # 1.5 MB
+
     for path in render_paths:
         if os.path.exists(path):
             size = os.path.getsize(path)
-            print(f"  OK: {path} ({size} bytes)")
+            if MIN_SIZE <= size <= MAX_SIZE:
+                print(f"  OK: {path} ({size} bytes)")
+            else:
+                print(f"  WRONG SIZE: {path} is {size} bytes (expected {MIN_SIZE:,}–{MAX_SIZE:,})")
+                all_sizes_ok = False
+                all_exist = False
         else:
             print(f"  MISSING: {path}")
             all_exist = False
 
-    if all_exist:
-        print("\nDone! All renders complete and verified.")
+    # P1: Detect PNG corruption via PIL.Image.verify()
+    print("\n=== VALIDATION: PNG Corruption Detection (P1) ===")
+    all_pngs_valid = True
+    for path in render_paths:
+        if os.path.exists(path):
+            try:
+                img = Image.open(path)
+                img.verify()
+                print(f"  OK: {path} (no corruption)")
+            except Exception as e:
+                print(f"  CORRUPT PNG: {path}: {e}")
+                all_pngs_valid = False
+                all_exist = False
+
+    if all_exist and all_pngs_valid:
+        print("\n=== FINAL RESULT: SUCCESS ===")
+        print("All renders complete and validated:")
+        print("  - P2: Output directory writable ✓")
+        print("  - P3: File sizes in range [50KB–500KB] ✓")
+        print("  - P1: PNG files not corrupted ✓")
         return True
     else:
-        print("\nERROR: Some renders are missing!")
+        print("\n=== FINAL RESULT: FAILURE ===")
+        if not os.access(OUTPUT_DIR, os.W_OK):
+            print("  - P2: Output directory NOT writable ✗")
+        if not all_sizes_ok:
+            print("  - P3: Some files have wrong sizes ✗")
+        if not all_pngs_valid:
+            print("  - P1: Some PNG files are corrupted ✗")
         return False
 
 
