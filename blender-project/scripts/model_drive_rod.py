@@ -6,7 +6,7 @@ Used in the upper leg assembly to transmit drive force from the hip servo
 to the thigh rod via dual-shear parallel linkage.
 
 Structure:
-  - Main bar: rectangular cross-section with rounded edges (beveled corners)
+  - Main bar: rectangular cross-section with rounded edges (bmesh capsule profile)
   - Two pivot pins: cylinders at each end for assembly/joint context
   - Solid construction (no lightening slots)
 
@@ -23,8 +23,8 @@ Reference: Screenshot_20260822_191609.png (Drive Rod callout, grey bar from
 
 Sections:
   1. Units / cleanup / materials
-  2. Mesh primitives (box, cylinder, bevel/refine)
-  3. Component builders (flat bar, pivot pins)
+  2. Mesh primitives (bmesh capsule bar, cylinder for pins)
+  3. Component builders (flat bar with rounded edges, pivot pins)
   4. Assembly: bar + 2 pins
   5. Main
 """
@@ -145,33 +145,6 @@ def shade_smooth(obj):
         poly.use_smooth = True
 
 
-def make_box(name, collection, size_mm, pivot_mm=(0.0, 0.0, 0.0),
-             location_mm=(0.0, 0.0, 0.0), material=None):
-    """
-    Box of size_mm (x,y,z), local origin offset by pivot_mm from geometric center.
-    """
-    sx, sy, sz = mm(*size_mm)
-    px, py, pz = mm(*pivot_mm)
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-    for v in bm.verts:
-        v.co.x = v.co.x * sx - px
-        v.co.y = v.co.y * sy - py
-        v.co.z = v.co.z * sz - pz
-    mesh = bpy.data.meshes.new(name + "_mesh")
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.update()
-    obj = bpy.data.objects.new(name, mesh)
-    _link(obj, collection)
-    obj.location = mm(*location_mm)
-    shade_flat(obj)
-    apply_transforms(obj)
-    if material is not None:
-        assign_material(obj, material)
-    return obj
-
-
 def make_cylinder(name, collection, radius_mm, depth_mm, axis='Z', segments=32,
                    pivot_mm=(0.0, 0.0, 0.0), location_mm=(0.0, 0.0, 0.0),
                    cap=True, material=None):
@@ -205,23 +178,6 @@ def make_cylinder(name, collection, radius_mm, depth_mm, axis='Z', segments=32,
     return obj
 
 
-def bevel_sharp_edges(obj, bevel_width_mm=0.3, segments=2, angle_limit=35.0):
-    """
-    Add a bevel modifier to round sharp edges, then apply it.
-    This creates the realistic rounded corners seen in the reference image.
-    """
-    shade_smooth(obj)
-
-    bevel = obj.modifiers.new("Bevel", type='BEVEL')
-    bevel.width = mm(bevel_width_mm)
-    bevel.segments = segments
-    bevel.limit_method = 'ANGLE'
-    bevel.angle_limit = math.radians(angle_limit)
-
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.modifier_apply(modifier=bevel.name)
-
-
 # ---------------------------------------------------------------------------
 # 3. Component builders
 # ---------------------------------------------------------------------------
@@ -231,6 +187,9 @@ DRIVE_ROD_LEN = 81.5       # pivot-to-pivot length
 DRIVE_ROD_WIDTH = 6.0      # width (Y direction)
 DRIVE_ROD_THICK = 3.5      # thickness (Z direction)
 
+# Corner radius for bmesh capsule profile (smooth rounded edges)
+CORNER_RADIUS = 0.4        # mm, creates smooth rounded corners
+
 # Pivot pin dimensions
 PIVOT_PIN_RADIUS = 1.5     # bolt hole radius
 PIVOT_PIN_HEIGHT = 2.5     # extends 1.25mm on each side from bar surface
@@ -238,27 +197,112 @@ PIVOT_PIN_HEIGHT = 2.5     # extends 1.25mm on each side from bar surface
 
 def build_flat_bar(collection):
     """
-    Build the main flat bar with rectangular cross-section.
-    Will have beveled/rounded edges applied.
+    Build the main flat bar with rectangular cross-section and rounded edges
+    using bmesh capsule/stadium profile (extrude/inset approach).
+
+    Bar extends from x=-40.75mm to x=+40.75mm (centered at origin).
+    Width (Y): 6.0mm, centered at y=0
+    Thickness (Z): 3.5mm, centered at z=0
     """
-    bar = make_box(
-        f"{PREFIX}FlatBar",
-        collection,
-        (DRIVE_ROD_LEN, DRIVE_ROD_WIDTH, DRIVE_ROD_THICK),
-        pivot_mm=(DRIVE_ROD_LEN / 2, DRIVE_ROD_WIDTH / 2, DRIVE_ROD_THICK / 2),
-        material=MAT_PLATE()
-    )
 
-    # Apply bevel to round the edges for a more realistic appearance
-    bevel_sharp_edges(bar, bevel_width_mm=0.4, segments=3, angle_limit=40.0)
+    # Create bmesh
+    bm = bmesh.new()
 
-    return bar
+    # Build rounded rectangle profile in the YZ plane (cross-section)
+    # Width = 6.0mm (Y direction), Thickness = 3.5mm (Z direction)
+    # We'll create a profile with rounded corners using a series of vertices
+
+    half_w = mm(DRIVE_ROD_WIDTH / 2)
+    half_t = mm(DRIVE_ROD_THICK / 2)
+    corner_r = mm(CORNER_RADIUS)
+
+    # Create vertices for the profile (YZ plane cross-section)
+    # We create a rounded rectangle with 8 vertices per corner
+    profile_verts = []
+
+    # Right edge (X = constant), create profile shape
+    # Start from bottom-right, go counterclockwise
+    # Bottom-right corner arc
+    for i in range(9):
+        angle = (i / 8.0) * (math.pi / 2)
+        y = half_w - corner_r + corner_r * math.sin(angle)
+        z = -half_t + corner_r - corner_r * math.cos(angle)
+        v = bm.verts.new((0, y, z))
+        profile_verts.append(v)
+
+    # Top-right corner arc
+    for i in range(1, 9):
+        angle = (i / 8.0) * (math.pi / 2)
+        y = half_w - corner_r + corner_r * math.cos(angle)
+        z = half_t - corner_r + corner_r * math.sin(angle)
+        v = bm.verts.new((0, y, z))
+        profile_verts.append(v)
+
+    # Top-left corner arc
+    for i in range(1, 9):
+        angle = (i / 8.0) * (math.pi / 2)
+        y = -half_w + corner_r - corner_r * math.sin(angle)
+        z = half_t - corner_r + corner_r * math.cos(angle)
+        v = bm.verts.new((0, y, z))
+        profile_verts.append(v)
+
+    # Bottom-left corner arc
+    for i in range(1, 8):
+        angle = (i / 8.0) * (math.pi / 2)
+        y = -half_w + corner_r - corner_r * math.cos(angle)
+        z = -half_t + corner_r - corner_r * math.sin(angle)
+        v = bm.verts.new((0, y, z))
+        profile_verts.append(v)
+
+    # Create face from profile vertices
+    bm.faces.new(profile_verts)
+
+    # Extrude the profile along the X axis (bar length)
+    bar_len = mm(DRIVE_ROD_LEN)
+    extrude_dir = (bar_len, 0, 0)
+
+    # Select all faces for extrude
+    for face in bm.faces:
+        face.select = True
+
+    # Use bmesh extrude operator
+    ret = bmesh.ops.extrude_face_region(bm, geom=list(bm.faces))
+    geom_extruded = ret["geom"]
+
+    # Move extruded geometry
+    for geom in geom_extruded:
+        if isinstance(geom, bmesh.types.BMVert):
+            geom.co.x += extrude_dir[0]
+
+    # Center the bar at origin in X direction
+    for v in bm.verts:
+        v.co.x -= bar_len / 2
+
+    # Create mesh and object
+    mesh = bpy.data.meshes.new(PREFIX + "FlatBar_mesh")
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+    obj = bpy.data.objects.new(PREFIX + "FlatBar", mesh)
+    _link(obj, collection)
+
+    shade_smooth(obj)
+    apply_transforms(obj)
+    assign_material(obj, MAT_PLATE())
+
+    return obj
 
 
 def build_pivot_pin(name, collection, location_mm=(0.0, 0.0, 0.0)):
     """
     Build a single pivot pin (cylinder) for assembly context.
-    Positioned at bar surface, extending perpendicular.
+    Positioned at bar surface, extending perpendicular (along X axis).
+
+    Args:
+        name: name of the pin object
+        collection: Blender collection to link to
+        location_mm: (x, y, z) position in mm
     """
     pin = make_cylinder(
         name,
@@ -280,11 +324,18 @@ def build_pivot_pin(name, collection, location_mm=(0.0, 0.0, 0.0)):
 def build_assembly(collection):
     """
     Build the complete drive rod assembly:
-    - Main flat bar (beveled)
+    - Main flat bar (with rounded edges via bmesh capsule)
     - Two pivot pins at each end
+
+    The bar is centered at origin:
+      - X: -40.75mm to +40.75mm
+      - Y: -3.0mm to +3.0mm (centered)
+      - Z: -1.75mm to +1.75mm (centered)
+
+    Pivot pins are positioned at the bar ends (x = ±40.75mm).
     """
 
-    # Build main bar (at origin, centered on Z, extends along X)
+    # Build main bar (centered at origin)
     bar = build_flat_bar(collection)
 
     # Pivot pins positioned at bar ends

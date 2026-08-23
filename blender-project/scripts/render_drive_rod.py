@@ -3,6 +3,7 @@ Render pipeline for Drive Rod model (issue #106)
 
 Generates multi-angle renders of the drive rod from several viewpoints.
 Uses orthographic/perspective views for clarity.
+Implements proper 3-point lighting with world ambient light.
 """
 
 import bpy
@@ -22,28 +23,51 @@ def setup_render_engine():
     scene.cycles.use_denoising = False
 
 
-def add_sun_light(name, energy, x, y, z):
-    """Add a sun light to the scene."""
+def setup_world_lighting():
+    """Setup world ambient lighting for better visibility."""
+    world = bpy.data.worlds["World"]
+    world.use_nodes = True
+    bg = world.node_tree.nodes["Background"]
+    bg.inputs[0].default_value = (0.9, 0.9, 0.95, 1.0)  # light gray background
+    bg.inputs[1].default_value = 1.2  # strength
+
+
+def add_sun_light(name, energy, rotation_euler):
+    """
+    Add a directional sun light to the scene with proper rotation.
+
+    Args:
+        name: name of the light
+        energy: light energy/strength
+        rotation_euler: (x, y, z) rotation in radians
+    """
     light_data = bpy.data.lights.new(name, type='SUN')
     light_data.energy = energy
     light_data.angle = math.radians(3)
     light_obj = bpy.data.objects.new(name, light_data)
     bpy.context.collection.objects.link(light_obj)
-    light_obj.location = (x, y, z)
+    light_obj.rotation_euler = rotation_euler
     return light_obj
 
 
 def setup_lighting():
-    """Setup three-point lighting."""
+    """Setup three-point lighting with proper directional sun lights."""
     # Clear existing lights
     for obj in list(bpy.data.objects):
         if obj.type == 'LIGHT':
             bpy.data.objects.remove(obj, do_unlink=True)
 
-    # Add new lights
-    add_sun_light("KeyLight", 2.0, 5, 3, 8)
-    add_sun_light("FillLight", 0.7, -5, 2, 4)
-    add_sun_light("RimLight", 0.5, 0, -8, 3)
+    # Setup world ambient light
+    setup_world_lighting()
+
+    # Add key light (main light from upper front-left)
+    add_sun_light("KeyLight", 2.0, (math.radians(45), math.radians(-45), 0))
+
+    # Add fill light (softer, from opposite side)
+    add_sun_light("FillLight", 0.7, (math.radians(30), math.radians(90), 0))
+
+    # Add rim light (edge light from back)
+    add_sun_light("RimLight", 0.5, (math.radians(15), math.radians(180), 0))
 
 
 def get_collection_bounds(coll_name):
