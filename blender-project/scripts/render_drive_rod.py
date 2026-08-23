@@ -1,197 +1,238 @@
 """
-Render pipeline for Drive Rod model (issue #106)
+Render script for the drive rod model (issue #106)
 
-Generates multi-angle renders of the drive rod from several viewpoints.
-Uses orthographic/perspective views for clarity.
-Implements proper 3-point lighting with world ambient light.
+Generates multi-angle renders of the drive rod flat-bar connector showing:
+  - Front view (A): YZ plane view, pivot pins visible
+  - Side view (B): XZ plane view, full bar profile
+  - Isometric view (C): diagonal 3D view for assembly clarity
+  - Back/left view (D): 3/4 rear view for detail
+
+Saves:
+  - drive_rod_front.png
+  - drive_rod_side.png
+  - drive_rod_isometric.png
+  - drive_rod_back_left.png
+
+Reference: issue #106 Phase 1 scope
 """
 
 import bpy
 import math
-from mathutils import Vector
+import subprocess
+import os
+
+# Import the model builder
+import sys
+sys.path.insert(0, "/home/pluto-atom-4/blender-workspace/blender-project/scripts")
+from model_drive_rod import main as build_model
+
+OUTPUT_DIR = "/home/pluto-atom-4/blender-workspace/blender-project/renders"
+
+# Render settings
+RENDER_W = 960
+RENDER_H = 960
+SAMPLES = 32
+DENOISE = False  # Disable denoising to avoid OpenImageDenoise requirement
 
 
-def setup_render_engine():
-    """Configure render engine for fast headless rendering."""
+def setup_render_settings(samples=SAMPLES, denoise=DENOISE):
+    """Configure Blender render engine (Cycles, viewport shading)."""
     scene = bpy.context.scene
-    scene.render.image_settings.file_format = 'PNG'
-    scene.render.image_settings.compression = 15
-    scene.render.resolution_x = 1600
-    scene.render.resolution_y = 1200
     scene.render.engine = 'CYCLES'
-    scene.cycles.samples = 32
-    scene.cycles.use_denoising = False
+    scene.render.image_settings.file_format = 'PNG'
+    scene.render.image_settings.color_depth = '8'
+    scene.cycles.samples = samples
+    scene.cycles.use_denoising = denoise
+    scene.render.film_transparent = True
+    scene.render.resolution_x = RENDER_W
+    scene.render.resolution_y = RENDER_H
 
 
 def setup_world_lighting():
-    """Setup world ambient lighting for better visibility."""
+    """Set up basic world lighting for better visibility."""
     world = bpy.data.worlds["World"]
     world.use_nodes = True
     bg = world.node_tree.nodes["Background"]
-    bg.inputs[0].default_value = (0.9, 0.9, 0.95, 1.0)  # light gray background
+    bg.inputs[0].default_value = (0.9, 0.9, 0.95, 1.0)  # light gray
     bg.inputs[1].default_value = 1.2  # strength
 
 
-def add_sun_light(name, energy, rotation_euler):
-    """
-    Add a directional sun light to the scene with proper rotation.
-
-    Args:
-        name: name of the light
-        energy: light energy/strength
-        rotation_euler: (x, y, z) rotation in radians
-    """
-    light_data = bpy.data.lights.new(name, type='SUN')
-    light_data.energy = energy
-    light_data.angle = math.radians(3)
-    light_obj = bpy.data.objects.new(name, light_data)
+def create_key_light(strength=2.0, location=(30, 30, 40)):
+    """Add a key light (sun lamp) for shading."""
+    light_data = bpy.data.lights.new(name="KeyLight", type='SUN')
+    light_data.energy = strength
+    light_obj = bpy.data.objects.new(name="KeyLight", object_data=light_data)
     bpy.context.collection.objects.link(light_obj)
-    light_obj.rotation_euler = rotation_euler
+    light_obj.location = location
     return light_obj
 
 
-def setup_lighting():
-    """Setup three-point lighting with proper directional sun lights."""
-    # Clear existing lights
-    for obj in list(bpy.data.objects):
-        if obj.type == 'LIGHT':
-            bpy.data.objects.remove(obj, do_unlink=True)
+def render_view(name, camera_location, camera_lookat, render_path):
+    """
+    Render a single view from camera_location looking at camera_lookat.
 
-    # Setup world ambient light
-    setup_world_lighting()
-
-    # Add key light (main light from upper front-left)
-    add_sun_light("KeyLight", 2.0, (math.radians(45), math.radians(-45), 0))
-
-    # Add fill light (softer, from opposite side)
-    add_sun_light("FillLight", 0.7, (math.radians(30), math.radians(90), 0))
-
-    # Add rim light (edge light from back)
-    add_sun_light("RimLight", 0.5, (math.radians(15), math.radians(180), 0))
-
-
-def get_collection_bounds(coll_name):
-    """Get world-space bounds of all objects in a collection."""
-    coll = bpy.data.collections.get(coll_name)
-    if not coll:
-        return None
-
-    objs = list(coll.all_objects)
-    if not objs:
-        return None
-
-    all_points = []
-    for obj in objs:
-        if obj.type != 'MESH':
-            continue
-        for v in obj.bound_box:
-            v_world = obj.matrix_world @ Vector(v)
-            all_points.append(v_world)
-
-    if not all_points:
-        return None
-
-    xs = [p.x for p in all_points]
-    ys = [p.y for p in all_points]
-    zs = [p.z for p in all_points]
-
-    center = Vector(((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, (min(zs) + max(zs)) / 2))
-    size = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
-
-    return {'center': center, 'size': size}
-
-
-def create_camera(location, target):
-    """Create and setup a camera."""
-    # Remove old camera
-    for cam in bpy.data.cameras:
-        bpy.data.cameras.remove(cam)
-    for obj in bpy.data.objects:
-        if obj.type == 'CAMERA':
-            bpy.data.objects.remove(obj, do_unlink=True)
-
-    # Create new camera
-    cam_data = bpy.data.cameras.new("Camera")
-    cam_obj = bpy.data.objects.new("Camera", cam_data)
-    bpy.context.collection.objects.link(cam_obj)
-
-    cam_obj.location = location
-
-    # Point at target
-    direction = (target - location).normalized()
-    rot_quat = direction.to_track_quat('-Z', 'Y')
-    cam_obj.rotation_euler = rot_quat.to_euler()
-
-    cam_data.type = 'PERSP'
-    cam_data.lens = 50
-
-    bpy.context.scene.camera = cam_obj
-    return cam_obj
-
-
-def render_view(name, azimuth_deg, elevation_deg, bounds, distance_scale=2.5):
-    """Render a single view and save."""
+    Args:
+        name: descriptive name (e.g., "Front View")
+        camera_location: (x, y, z) tuple
+        camera_lookat: (x, y, z) point to look at
+        render_path: output PNG file path
+    """
     scene = bpy.context.scene
 
-    center = bounds['center']
-    size = bounds['size']
-    distance = size * distance_scale
+    # Create camera if it doesn't exist
+    if "RenderCamera" not in bpy.data.objects:
+        cam_data = bpy.data.cameras.new(name="RenderCamera")
+        cam_obj = bpy.data.objects.new("RenderCamera", cam_data)
+        bpy.context.collection.objects.link(cam_obj)
+    else:
+        cam_obj = bpy.data.objects["RenderCamera"]
 
-    # Spherical coordinates
-    azimuth_rad = math.radians(azimuth_deg)
-    elevation_rad = math.radians(elevation_deg)
+    # Position and orient camera
+    cam_obj.location = camera_location
+    direction = (camera_lookat[0] - camera_location[0],
+                 camera_lookat[1] - camera_location[1],
+                 camera_lookat[2] - camera_location[2])
+    rot_quat = bpy.context.view_layer.objects.active.matrix_world.to_quaternion()
+    cam_obj.rotation_euler = (-math.atan2(direction[2],
+                                           math.sqrt(direction[0]**2 + direction[1]**2)),
+                              0,
+                              math.atan2(direction[1], direction[0]))
 
-    cam_x = center.x + distance * math.cos(elevation_rad) * math.cos(azimuth_rad)
-    cam_y = center.y + distance * math.cos(elevation_rad) * math.sin(azimuth_rad)
-    cam_z = center.z + distance * math.sin(elevation_rad)
-    cam_loc = Vector((cam_x, cam_y, cam_z))
+    scene.camera = cam_obj
+    scene.render.filepath = render_path
 
-    create_camera(cam_loc, center)
-
-    output_path = f"/home/pluto-atom-4/blender-workspace/blender-project/renders/drive_rod_{name}.png"
-    scene.render.filepath = output_path
-
-    print(f"Rendering {name} view...")
+    print(f"Rendering {name} to {render_path}...")
     bpy.ops.render.render(write_still=True)
-    print(f"Saved: {output_path}")
+    print(f"  -> Saved: {render_path}")
+
+
+def render_views(samples=SAMPLES):
+    """Render the drive rod from multiple angles."""
+    renders = []
+
+    # Front view: pivot pins facing camera (X-looking, Y up)
+    front_path = os.path.join(OUTPUT_DIR, "drive_rod_front.png")
+    render_view("Front View", camera_location=(60, 0, 0), camera_lookat=(0, 0, 0), render_path=front_path)
+    renders.append(front_path)
+
+    # Side view: profile view (Y-looking, Z up)
+    side_path = os.path.join(OUTPUT_DIR, "drive_rod_side.png")
+    render_view("Side View", camera_location=(0, 60, 0), camera_lookat=(0, 0, 0), render_path=side_path)
+    renders.append(side_path)
+
+    # Isometric view: 3D assembly view
+    iso_path = os.path.join(OUTPUT_DIR, "drive_rod_isometric.png")
+    render_view("Isometric View", camera_location=(50, 50, 30), camera_lookat=(0, 0, 0), render_path=iso_path)
+    renders.append(iso_path)
+
+    # Back/left view: 3/4 rear view
+    back_left_path = os.path.join(OUTPUT_DIR, "drive_rod_back_left.png")
+    render_view("Back/Left View", camera_location=(-50, 50, 20), camera_lookat=(0, 0, 0), render_path=back_left_path)
+    renders.append(back_left_path)
+
+    return renders
+
+
+def analyze_render_pixels(image_path):
+    """
+    Analyze pixel statistics from a rendered image.
+    Returns dict with min/max/avg brightness per channel.
+    Image values are 0-1.0 (float32) or 0-255 (8-bit), converts to 0-255 scale.
+    """
+    try:
+        from PIL import Image
+        import numpy as np
+    except ImportError:
+        print("PIL/numpy not available; skipping pixel analysis")
+        return None
+
+    if not os.path.exists(image_path):
+        print(f"Image not found: {image_path}")
+        return None
+
+    img = Image.open(image_path).convert('RGB')
+    arr = np.array(img, dtype=np.float32)
+
+    # Convert to 0-255 range if needed
+    if arr.max() <= 1.0:
+        arr = arr * 255.0
+
+    # Calculate statistics per channel
+    stats = {}
+    for i, channel in enumerate(['R', 'G', 'B']):
+        channel_data = arr[:, :, i]
+        stats[channel] = {
+            'min': int(channel_data.min()),
+            'max': int(channel_data.max()),
+            'avg': int(channel_data.mean()),
+        }
+
+    # Overall brightness (average of RGB)
+    brightness = arr.mean()
+    stats['overall_brightness'] = int(brightness)
+
+    return stats
 
 
 def main():
-    """Main render pipeline."""
-    # Load the model
-    blend_file = "/home/pluto-atom-4/blender-workspace/blender-project/renders/drive_rod.blend"
-    print(f"Loading: {blend_file}")
+    """Run render pipeline with pixel verification."""
+    # Build model
+    print("Building drive rod model...")
+    build_model()
 
-    bpy.ops.wm.open_mainfile(filepath=blend_file)
+    # Set up rendering
+    setup_render_settings()
+    setup_world_lighting()
+    create_key_light()
 
-    # Setup rendering
-    setup_render_engine()
-    setup_lighting()
+    # Single-frame test at low samples for pixel verification
+    print("\n=== PIXEL VERIFICATION TEST ===")
+    print("Rendering single frame at low samples for pixel statistics...")
+    setup_render_settings(samples=8)  # Low samples for fast test
 
-    # Get assembly bounds
-    bounds = get_collection_bounds("DriveRod")
-    if not bounds:
-        print("ERROR: Could not find DriveRod collection")
-        return
+    test_path = os.path.join(OUTPUT_DIR, "drive_rod_test.png")
+    render_view("Test Frame", camera_location=(50, 50, 30), camera_lookat=(0, 0, 0), render_path=test_path)
 
-    print(f"Assembly center: {bounds['center']}, size: {bounds['size']}")
+    stats = analyze_render_pixels(test_path)
+    if stats:
+        print(f"\nPixel Statistics (test frame):")
+        print(f"  R: min={stats['R']['min']}, max={stats['R']['max']}, avg={stats['R']['avg']}")
+        print(f"  G: min={stats['G']['min']}, max={stats['G']['max']}, avg={stats['G']['avg']}")
+        print(f"  B: min={stats['B']['min']}, max={stats['B']['max']}, avg={stats['B']['avg']}")
+        print(f"  Overall brightness: {stats['overall_brightness']}/255")
 
-    # Render angles: (azimuth_deg, elevation_deg, name)
-    # Front, Side, Isometric views
-    views = [
-        (0, 0, "front"),        # Front view (looking down the X axis)
-        (90, 0, "side"),        # Side view (looking down the Y axis)
-        (45, 30, "isometric"),  # Isometric view
-        (225, 20, "back_left"), # Additional 3/4 view
-    ]
+        if stats['overall_brightness'] < 100:
+            print(f"\nERROR: Brightness {stats['overall_brightness']}/255 is too low (threshold: 100/255)")
+            print("DO NOT proceeding to full renders. Check lighting setup.")
+            return False
+        else:
+            print(f"\nPASS: Brightness {stats['overall_brightness']}/255 exceeds threshold")
+    else:
+        print("WARNING: Could not analyze pixel statistics; proceeding with caution")
 
-    for azimuth, elevation, name in views:
-        try:
-            render_view(name, azimuth, elevation, bounds, distance_scale=2.5)
-        except Exception as e:
-            print(f"ERROR rendering {name}: {e}")
+    # Full render pipeline at full samples
+    print("\n=== FULL RENDER PIPELINE ===")
+    setup_render_settings(samples=32)
 
-    print("Render pipeline complete!")
+    print("\nRendering views...")
+    render_paths = render_views(samples=32)
+
+    print("\nVerifying output files...")
+    all_exist = True
+    for path in render_paths:
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            print(f"  OK: {path} ({size} bytes)")
+        else:
+            print(f"  MISSING: {path}")
+            all_exist = False
+
+    if all_exist:
+        print("\nDone! All renders complete and verified.")
+        return True
+    else:
+        print("\nERROR: Some renders are missing!")
+        return False
 
 
 if __name__ == "__main__":
