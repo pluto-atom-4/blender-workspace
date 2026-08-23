@@ -43,7 +43,7 @@ def setup_render_settings(samples=SAMPLES, denoise=DENOISE):
     scene.render.image_settings.color_depth = '8'
     scene.cycles.samples = samples
     scene.cycles.use_denoising = denoise
-    scene.render.film_transparent = True
+    scene.render.film_transparent = False  # BUG FIX #106: was True, causing black renders
     scene.render.resolution_x = RENDER_W
     scene.render.resolution_y = RENDER_H
 
