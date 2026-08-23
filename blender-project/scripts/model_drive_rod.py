@@ -26,7 +26,7 @@ Sections:
   2. Mesh primitives (bmesh capsule bar, cylinder for pins)
   3. Component builders (flat bar with rounded edges, pivot pins)
   4. Assembly: bar + 2 pins
-  5. Viewport configuration (hide Cube, set zoom)
+  5. Viewport configuration (hide Cube, frame model, optimize viewing)
   6. Main
 """
 
@@ -367,31 +367,59 @@ def build_assembly(collection):
 
 def configure_viewport():
     """
-    Configure viewport settings:
+    Configure viewport for optimal DriveRod viewing:
     - Hide the Cube object from the viewport
-    - Set viewport zoom to 10x
+    - Frame the DriveRod collection in view
+    - Set appropriate zoom level for inspection
+    - Position camera for isometric view of the model
     """
     # Hide Cube object
     if "Cube" in bpy.data.objects:
         cube = bpy.data.objects["Cube"]
         cube.hide_viewport = True
         cube.hide_render = True
-        print("Hidden Cube from viewport")
+        print("✓ Hidden Cube from viewport")
 
-    # Set viewport zoom to 10x
+    # Frame the DriveRod model in view
+    # Select all DriveRod objects to frame them
+    if COLLECTION_NAME in bpy.data.collections:
+        collection = bpy.data.collections[COLLECTION_NAME]
+
+        # Select all objects in DriveRod collection
+        for obj in collection.objects:
+            obj.select_set(True)
+
+        # Make one object active
+        if collection.objects:
+            bpy.context.view_layer.objects.active = collection.objects[0]
+
+        # Frame all selected objects (Home key equivalent)
+        try:
+            bpy.ops.view3d.view_all(center=True)
+            print("✓ Framed DriveRod model in viewport")
+        except:
+            print("⚠ Could not frame model (may not be in interactive mode)")
+
+        # Deselect all
+        for obj in collection.objects:
+            obj.select_set(False)
+
+    # Set viewport zoom and camera distance
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             for space in area.spaces:
                 if space.type == 'VIEW_3D':
-                    # Set view_camera_zoom to 10.0 for 10x zoom
+                    # Set a moderate zoom for good visibility
                     if hasattr(space, 'region_3d') and space.region_3d:
-                        if hasattr(space.region_3d, 'view_camera_zoom'):
-                            space.region_3d.view_camera_zoom = 10.0
-                            print("Set viewport zoom to 10x (view_camera_zoom = 10.0)")
+                        # Use view_distance for better control
+                        if hasattr(space.region_3d, 'view_distance'):
+                            space.region_3d.view_distance = 0.2  # Closer to model for better visibility
+                            print("✓ Set view distance for optimal visibility")
 
-                        if hasattr(space.region_3d, 'view_zoom'):
-                            space.region_3d.view_zoom = 10.0
-                            print("Set viewport zoom to 10x (view_zoom = 10.0)")
+                        # Set zoom (moderate - not too zoomed in)
+                        if hasattr(space.region_3d, 'view_camera_zoom'):
+                            space.region_3d.view_camera_zoom = 1.5
+                            print("✓ Set viewport zoom to 1.5x")
 
 
 # ---------------------------------------------------------------------------
@@ -408,15 +436,16 @@ def main():
 
     # Build assembly
     assembly = build_assembly(collection)
+    print(f"✓ Built DriveRod assembly with {len(assembly)} components")
 
-    # Configure viewport (hide Cube, set zoom)
+    # Configure viewport (hide Cube, frame model, optimize viewing)
     configure_viewport()
 
     # Save .blend file when running headless
     if bpy.app.background:
         output_path = "/home/pluto-atom-4/blender-workspace/blender-project/renders/drive_rod.blend"
         bpy.ops.wm.save_as_mainfile(filepath=output_path)
-        print(f"Saved: {output_path}")
+        print(f"✓ Saved: {output_path}")
 
 
 if __name__ == "__main__":
