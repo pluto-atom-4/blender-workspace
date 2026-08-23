@@ -49,3 +49,5 @@ audit-output.txt
 # --no-rendering pendulum_world.wbt` creates .pendulum_world.wbproj on
 # the spot). Not meaningful project config, analogous to __pycache__/.
 blender-project/physics/worlds/*.wbproj
+
+**/tmp/*
