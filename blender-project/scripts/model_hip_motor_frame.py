@@ -259,7 +259,7 @@ def build_servo(collection):
 
 
 def build_housing(collection):
-    """Build Hip Motor frame housing (structural box enclosure)."""
+    """Build Hip Motor frame housing (open-frame structural box with 3 walls)."""
     # Housing outer box
     bm = bmesh.new()
 
@@ -284,13 +284,14 @@ def build_housing(collection):
         bm.verts.new((-half_x,  half_y,  half_z)),
     ]
 
-    # Create outer faces
-    bm.faces.new([vertices[0], vertices[1], vertices[2], vertices[3]])
-    bm.faces.new([vertices[4], vertices[7], vertices[6], vertices[5]])
-    bm.faces.new([vertices[0], vertices[4], vertices[5], vertices[1]])
-    bm.faces.new([vertices[1], vertices[5], vertices[6], vertices[2]])
-    bm.faces.new([vertices[2], vertices[6], vertices[7], vertices[3]])
-    bm.faces.new([vertices[3], vertices[7], vertices[4], vertices[0]])
+    # Create only 3 outer faces (bottom, right, left) - skip top, front, back
+    # Face layout: [0,1,2,3]=bottom, [4,7,6,5]=top, [0,4,5,1]=front, [1,5,6,2]=right, [2,6,7,3]=back, [3,7,4,0]=left
+    bottom_face = bm.faces.new([vertices[0], vertices[1], vertices[2], vertices[3]])
+    right_face = bm.faces.new([vertices[1], vertices[5], vertices[6], vertices[2]])
+    left_face = bm.faces.new([vertices[3], vertices[7], vertices[4], vertices[0]])
+
+    # Apply solidify to generate wall thickness (inner offset + rim faces)
+    bmesh.ops.solidify(bm, geom=[bottom_face, right_face, left_face], thickness=h_wall)
 
     mesh = bpy.data.meshes.new(PREFIX + "Housing_mesh")
     bm.to_mesh(mesh)
@@ -378,7 +379,7 @@ def main():
     # Build assembly
     assembly = build_assembly(collection)
     print(f"✓ Built Hip Motor Frame assembly with {len(assembly)} main components")
-    print(f"  - Housing: {HOUSING_X}×{HOUSING_Y}×{HOUSING_Z}mm structural frame box")
+    print(f"  - Housing: {HOUSING_X}×{HOUSING_Y}×{HOUSING_Z}mm open-frame (bottom+right+left walls, {HOUSING_WALL}mm thickness)")
     print(f"  - Servo: {SERVO_H}×{SERVO_W}×{SERVO_L}mm body + {SERVO_SPLINE_RADIUS}mm spline")
     print(f"  - (Phase 2: Rod linkage integration deferred)")
 
