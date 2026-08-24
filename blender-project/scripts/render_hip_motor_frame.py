@@ -1,14 +1,11 @@
 """
-Render script for the Hip Motor Robot Frame assembly model (issue #112)
+Render script for the Hip Motor Robot Frame assembly model (issue #112, refactored Phase 1)
 
 Generates isometric render of the hip motor frame assembly showing:
   - Hip Motor Housing (structural frame box)
   - STS-3032 Servo (body + output spline)
-  - Thigh Rod1 (flat-bar with lightening slots)
-  - Drive Rod (flat-bar connector)
-  - Pivot pin assemblies
 
-Phase 1 scope: isometric view only (no multi-angle renders)
+Phase 1 scope: isometric view only, 3-component assembly (rod linkage deferred to Phase 2)
 
 Output:
   - hip_motor_frame.png (isometric view)
@@ -237,7 +234,7 @@ def main():
 
     # P6: Geometry Validation
     print("\n=== VALIDATION: Geometry (P6) ===")
-    required_objects = ["HMF_Housing", "HMF_ServoBody", "HMF_ThighRod1", "HMF_DriveRod"]
+    required_objects = ["HMF_Housing", "HMF_ServoBody", "HMF_ServoSpline"]
 
     for obj_name in required_objects:
         if obj_name not in bpy.data.objects:
@@ -246,9 +243,8 @@ def main():
 
     print("  OK: All required geometry objects found")
     print(f"    - Housing: {bpy.data.objects['HMF_Housing'].name}")
-    print(f"    - Servo: {bpy.data.objects['HMF_ServoBody'].name}")
-    print(f"    - Thigh Rod: {bpy.data.objects['HMF_ThighRod1'].name}")
-    print(f"    - Drive Rod: {bpy.data.objects['HMF_DriveRod'].name}")
+    print(f"    - Servo Body: {bpy.data.objects['HMF_ServoBody'].name}")
+    print(f"    - Servo Spline: {bpy.data.objects['HMF_ServoSpline'].name}")
 
     # Validate each geometry has faces
     for obj_name in required_objects:
