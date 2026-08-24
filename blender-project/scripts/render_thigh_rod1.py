@@ -107,6 +107,7 @@ def render_view(name, camera_location, camera_lookat, render_path):
     # Create camera if it doesn't exist
     if "RenderCamera" not in bpy.data.objects:
         cam_data = bpy.data.cameras.new(name="RenderCamera")
+        cam_data.clip_start = 0.001  # 1mm near-clip (issue #110: avoid clipping small geometry)
         cam_obj = bpy.data.objects.new("RenderCamera", cam_data)
         bpy.context.collection.objects.link(cam_obj)
     else:
@@ -154,7 +155,7 @@ def render_views(samples=SAMPLES, render_all_angles=False):
 
     # Isometric view: 3D assembly view (always rendered)
     iso_path = os.path.join(OUTPUT_DIR, "thigh_rod1_isometric.png")
-    render_view("Isometric View", camera_location=mm(50, 50, 30), camera_lookat=(0, 0, 0), render_path=iso_path)
+    render_view("Isometric View", camera_location=mm(64, 64, 38), camera_lookat=(0, 0, 0), render_path=iso_path)
     renders.append(iso_path)
 
     if render_all_angles:
@@ -323,7 +324,7 @@ def main():
     setup_render_settings(samples=32)
 
     test_path = os.path.join(OUTPUT_DIR, "thigh_rod1_test.png")
-    render_view("Test Frame", camera_location=mm(50, 50, 30), camera_lookat=(0, 0, 0), render_path=test_path)
+    render_view("Test Frame", camera_location=mm(64, 64, 38), camera_lookat=(0, 0, 0), render_path=test_path)
 
     stats = analyze_render_pixels(test_path)
     if stats:
