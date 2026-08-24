@@ -35,6 +35,15 @@ RENDER_H = 960
 SAMPLES = 32
 DENOISE = False  # Disable denoising to avoid OpenImageDenoise requirement
 
+# Millimeter scaling helper (issue #110 fix: scale camera/light coordinates)
+MM = 0.001
+
+def mm(*vals):
+    """Convert millimeter coordinates to Blender units (0.001 scale)."""
+    if len(vals) == 1:
+        return vals[0] * MM
+    return tuple(v * MM for v in vals)
+
 
 def setup_render_settings(samples=SAMPLES, denoise=DENOISE):
     """Configure Blender render engine (Cycles, viewport shading)."""
@@ -58,8 +67,10 @@ def setup_world_lighting():
     bg.inputs[1].default_value = 3.0  # increased strength to compensate for darker background
 
 
-def create_key_light(strength=5.0, location=(50, 30, 50)):
+def create_key_light(strength=5.0, location=None):
     """Add a key light (sun lamp) for shading."""
+    if location is None:
+        location = mm(50, 30, 50)
     light_data = bpy.data.lights.new(name="KeyLight", type='SUN')
     light_data.energy = strength
     light_obj = bpy.data.objects.new(name="KeyLight", object_data=light_data)
@@ -68,8 +79,10 @@ def create_key_light(strength=5.0, location=(50, 30, 50)):
     return light_obj
 
 
-def create_fill_light(strength=5.0, location=(0, -60, 30)):
+def create_fill_light(strength=5.0, location=None):
     """Add a fill light (SUN lamp) opposite side view camera to create contrast on side view."""
+    if location is None:
+        location = mm(0, -60, 30)
     light_data = bpy.data.lights.new(name="FillLight", type='SUN')
     light_data.energy = strength
     light_obj = bpy.data.objects.new(name="FillLight", object_data=light_data)
@@ -136,22 +149,22 @@ def render_views(samples=SAMPLES):
 
     # Front view: pivot pins facing camera (X-looking, Y up)
     front_path = os.path.join(OUTPUT_DIR, "drive_rod_front.png")
-    render_view("Front View", camera_location=(60, 0, 0), camera_lookat=(0, 0, 0), render_path=front_path)
+    render_view("Front View", camera_location=mm(60, 0, 0), camera_lookat=(0, 0, 0), render_path=front_path)
     renders.append(front_path)
 
     # Side view: profile view (Y-looking, Z up)
     side_path = os.path.join(OUTPUT_DIR, "drive_rod_side.png")
-    render_view("Side View", camera_location=(0, 60, 0), camera_lookat=(0, 0, 0), render_path=side_path)
+    render_view("Side View", camera_location=mm(0, 60, 0), camera_lookat=(0, 0, 0), render_path=side_path)
     renders.append(side_path)
 
     # Isometric view: 3D assembly view
     iso_path = os.path.join(OUTPUT_DIR, "drive_rod_isometric.png")
-    render_view("Isometric View", camera_location=(50, 50, 30), camera_lookat=(0, 0, 0), render_path=iso_path)
+    render_view("Isometric View", camera_location=mm(50, 50, 30), camera_lookat=(0, 0, 0), render_path=iso_path)
     renders.append(iso_path)
 
     # Back/left view: 3/4 rear view
     back_left_path = os.path.join(OUTPUT_DIR, "drive_rod_back_left.png")
-    render_view("Back/Left View", camera_location=(-50, 50, 20), camera_lookat=(0, 0, 0), render_path=back_left_path)
+    render_view("Back/Left View", camera_location=mm(-50, 50, 20), camera_lookat=(0, 0, 0), render_path=back_left_path)
     renders.append(back_left_path)
 
     return renders
@@ -303,7 +316,7 @@ def main():
     setup_render_settings(samples=8)  # Low samples for fast test
 
     test_path = os.path.join(OUTPUT_DIR, "drive_rod_test.png")
-    render_view("Test Frame", camera_location=(50, 50, 30), camera_lookat=(0, 0, 0), render_path=test_path)
+    render_view("Test Frame", camera_location=mm(50, 50, 30), camera_lookat=(0, 0, 0), render_path=test_path)
 
     stats = analyze_render_pixels(test_path)
     if stats:
