@@ -156,7 +156,7 @@ def render_views(samples=SAMPLES, render_all_angles=False):
 
     # Isometric view: 3D assembly view (always rendered)
     iso_path = os.path.join(OUTPUT_DIR, "drive_rod_isometric.png")
-    render_view("Isometric View", camera_location=mm(64, 64, 38), camera_lookat=(0, 0, 0), render_path=iso_path)
+    render_view("Isometric View", camera_location=mm(80, 80, 45), camera_lookat=(0, 0, 0), render_path=iso_path)
     renders.append(iso_path)
 
     if render_all_angles:
@@ -324,7 +324,7 @@ def main():
     setup_render_settings(samples=8)  # Low samples for fast test
 
     test_path = os.path.join(OUTPUT_DIR, "drive_rod_test.png")
-    render_view("Test Frame", camera_location=mm(64, 64, 38), camera_lookat=(0, 0, 0), render_path=test_path)
+    render_view("Test Frame", camera_location=mm(80, 80, 45), camera_lookat=(0, 0, 0), render_path=test_path)
 
     stats = analyze_render_pixels(test_path)
     if stats:
