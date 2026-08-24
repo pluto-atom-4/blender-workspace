@@ -4,8 +4,9 @@ Render script for the Hip Motor Robot Frame assembly model (issue #112, refactor
 Generates isometric render of the hip motor frame assembly showing:
   - Hip Motor Housing (structural frame box)
   - STS-3032 Servo (body + output spline)
+  - Servo Wheel (70mm diameter wheel mounted on top)
 
-Phase 1 scope: isometric view only, 3-component assembly (rod linkage deferred to Phase 2)
+Phase 1 scope: isometric view only, 4-component assembly (rod linkage deferred to Phase 2)
 
 Output:
   - hip_motor_frame.png (isometric view)
@@ -60,14 +61,14 @@ def setup_world_lighting():
     world = bpy.data.worlds["World"]
     world.use_nodes = True
     bg = world.node_tree.nodes["Background"]
-    bg.inputs[0].default_value = (0.12, 0.12, 0.14, 1.0)  # slightly brighter gray
-    bg.inputs[1].default_value = 3.8  # increased strength
+    bg.inputs[0].default_value = (1.0, 1.0, 1.0, 1.0)  # slightly brighter gray
+    bg.inputs[1].default_value = 12.0  # increased strength
 
 
 def create_key_light(strength=6.0, location=None):
     """Add a key light (sun lamp) for shading."""
     if location is None:
-        location = mm(50, 30, 50)
+        location = mm(100, 50, 100)
     light_data = bpy.data.lights.new(name="KeyLight", type='SUN')
     light_data.energy = strength
     light_obj = bpy.data.objects.new(name="KeyLight", object_data=light_data)
@@ -79,7 +80,7 @@ def create_key_light(strength=6.0, location=None):
 def create_fill_light(strength=6.0, location=None):
     """Add a fill light (SUN lamp) for side illumination."""
     if location is None:
-        location = mm(0, -60, 30)
+        location = mm(-100, -50, 100)
     light_data = bpy.data.lights.new(name="FillLight", type='SUN')
     light_data.energy = strength
     light_obj = bpy.data.objects.new(name="FillLight", object_data=light_data)
@@ -144,7 +145,7 @@ def render_isometric(samples=SAMPLES):
     """Render isometric view (Phase 1 scope)."""
     iso_path = os.path.join(OUTPUT_DIR, "hip_motor_frame.png")
     render_view("Isometric View",
-                camera_location=mm(80, 80, 45),
+                camera_location=mm(60, 60, 35),
                 camera_lookat=(0, 0, 0),
                 render_path=iso_path)
     return [iso_path]
@@ -234,7 +235,7 @@ def main():
 
     # P6: Geometry Validation
     print("\n=== VALIDATION: Geometry (P6) ===")
-    required_objects = ["HMF_Housing", "HMF_ServoBody", "HMF_ServoSpline"]
+    required_objects = ["HMF_Housing", "HMF_ServoBody", "HMF_ServoSpline", "HMF_ServoWheel"]
 
     for obj_name in required_objects:
         if obj_name not in bpy.data.objects:
@@ -245,6 +246,7 @@ def main():
     print(f"    - Housing: {bpy.data.objects['HMF_Housing'].name}")
     print(f"    - Servo Body: {bpy.data.objects['HMF_ServoBody'].name}")
     print(f"    - Servo Spline: {bpy.data.objects['HMF_ServoSpline'].name}")
+    print(f"    - Servo Wheel: {bpy.data.objects['HMF_ServoWheel'].name}")
 
     # Validate each geometry has faces
     for obj_name in required_objects:
@@ -259,8 +261,8 @@ def main():
     # Set up rendering
     setup_render_settings()
     setup_world_lighting()
-    create_key_light(strength=6.0)
-    create_fill_light(strength=6.0)
+    create_key_light(strength=20.0)
+    create_fill_light(strength=20.0)
 
     # Single-frame test at low samples for pixel verification
     print("\n=== PIXEL VERIFICATION TEST (Pre-flight Contrast Check) ===")

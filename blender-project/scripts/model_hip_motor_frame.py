@@ -1,15 +1,17 @@
 """
 Hip Motor Robot Frame Assembly 3D Model (issue #112, refactored Phase 1)
 
-Simplified assembly model with 3 primary components:
+Simplified assembly model with 4 primary components:
   - Hip Motor Housing: structural frame box
   - STS-3032 Servo Body: actuator housing (23.2mm H × 12.1mm W × 28.5mm L)
   - Servo Output Spline: shaft extension for drive interface
+  - Servo Wheel: 70mm diameter wheel mounted on top of servo
 
 Assembly positioning:
   - Housing centered at origin
   - Servo mounted at top of housing, output shaft extending downward
   - Spline positioned at servo bottom for drive interface
+  - Wheel mounted on top of servo for drive interface
 
 Scale anchor: Feetech STS-3032 servo from datasheet (23.2×12.1×28.5mm)
 Reference: issue #112 architect plan (rod linkage deferred to Phase 2)
@@ -18,7 +20,7 @@ Sections:
   1. Units / cleanup / materials
   2. Mesh primitives (bmesh cylinders, boxes)
   3. Component dimensions
-  4. Component builders (Servo, Housing)
+  4. Component builders (Servo, Housing, Servo Wheel)
   5. Assembly positioning
   6. Viewport configuration
   7. Main
@@ -185,10 +187,14 @@ SERVO_L = 28.5          # length/depth (Z direction)
 SERVO_SPLINE_RADIUS = 2.0      # output shaft radius
 SERVO_SPLINE_LENGTH = 3.5      # output shaft extension length
 
+# Servo wheel dimensions (mounted on top of servo)
+SERVO_WHEEL_RADIUS = 35.0      # 70mm diameter wheel
+SERVO_WHEEL_THICKNESS = 5.0    # thickness of wheel (Y direction)
+
 # Housing dimensions (structural frame box to contain all components)
 HOUSING_X = 120.0       # outer dimension in X (length)
-HOUSING_Y = 90.0        # outer dimension in Y (width)
-HOUSING_Z = 80.0        # outer dimension in Z (height)
+HOUSING_Y = 132.0       # outer dimension in Y (width) - updated for off-center servo wheel
+HOUSING_Z = 96.0        # outer dimension in Z (height) - updated for wheel stub above servo shaft
 HOUSING_WALL = 2.5      # wall thickness
 
 # Positioning in assembly
@@ -258,6 +264,21 @@ def build_servo(collection):
     return {'body': obj_body, 'spline': spline}
 
 
+def build_servo_wheel(collection):
+    """Build 70mm diameter servo wheel mounted on top of servo."""
+    wheel = make_cylinder(
+        f"{PREFIX}ServoWheel",
+        collection,
+        SERVO_WHEEL_RADIUS,
+        SERVO_WHEEL_THICKNESS,
+        axis='Y',  # wheel rotates around Y axis (servo output direction)
+        segments=32,
+        cap=True,
+        material=MAT_METAL()
+    )
+    return wheel
+
+
 def build_housing(collection):
     """Build Hip Motor frame housing (open-frame structural box with 3 walls)."""
     # Housing outer box
@@ -315,6 +336,7 @@ def build_assembly(collection):
     Build the simplified Hip Motor Frame assembly (Phase 1):
     - Housing (structural frame box)
     - Servo (body + output spline)
+    - Servo Wheel (70mm diameter wheel mounted on top)
     """
 
     # Build housing
@@ -325,10 +347,17 @@ def build_assembly(collection):
     servo['body'].location = mm(0, SERVO_Z_OFFSET, 20)  # centered, elevated
     servo['spline'].location = mm(0, SERVO_Z_OFFSET - mm(SERVO_H/2), 20)  # at servo bottom center
 
+    # Build servo wheel - positioned on top of servo body
+    # Servo body top: Y = SERVO_Z_OFFSET + SERVO_H/2 = 30 + 11.6 = 41.6mm
+    # Wheel center: Y = servo_top + wheel_radius = 41.6 + 35 = 76.6mm
+    wheel = build_servo_wheel(collection)
+    wheel.location = mm(0, SERVO_Z_OFFSET + SERVO_H/2 + SERVO_WHEEL_RADIUS, 20)
+
     return {
         'housing': housing,
         'servo_body': servo['body'],
         'servo_spline': servo['spline'],
+        'servo_wheel': wheel,
     }
 
 
@@ -381,6 +410,7 @@ def main():
     print(f"✓ Built Hip Motor Frame assembly with {len(assembly)} main components")
     print(f"  - Housing: {HOUSING_X}×{HOUSING_Y}×{HOUSING_Z}mm open-frame (bottom+right+left walls, {HOUSING_WALL}mm thickness)")
     print(f"  - Servo: {SERVO_H}×{SERVO_W}×{SERVO_L}mm body + {SERVO_SPLINE_RADIUS}mm spline")
+    print(f"  - Servo Wheel: {SERVO_WHEEL_RADIUS * 2}mm diameter wheel mounted on top")
     print(f"  - (Phase 2: Rod linkage integration deferred)")
 
     # Configure viewport
