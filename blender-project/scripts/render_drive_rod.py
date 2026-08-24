@@ -2,18 +2,18 @@
 Render script for the drive rod model (issue #106)
 
 Generates multi-angle renders of the drive rod flat-bar connector showing:
-  - Front view (A): YZ plane view, pivot pins visible
-  - Side view (B): XZ plane view, full bar profile
-  - Isometric view (C): diagonal 3D view for assembly clarity
-  - Back/left view (D): 3/4 rear view for detail
+  - Isometric view (C): diagonal 3D view for assembly clarity (always rendered)
+  - Front view (A): YZ plane view, pivot pins visible (optional via render_all_angles=True)
+  - Side view (B): XZ plane view, full bar profile (optional via render_all_angles=True)
+  - Back/left view (D): 3/4 rear view for detail (optional via render_all_angles=True)
 
 Saves:
-  - drive_rod_front.png
-  - drive_rod_side.png
-  - drive_rod_isometric.png
-  - drive_rod_back_left.png
+  - drive_rod_isometric.png (always)
+  - drive_rod_front.png (optional)
+  - drive_rod_side.png (optional)
+  - drive_rod_back_left.png (optional)
 
-Reference: issue #106 Phase 1 scope
+Reference: issue #106 Phase 1 scope, issue #110 Phase 1 (isometric-only default)
 """
 
 import bpy
@@ -143,29 +143,36 @@ def render_view(name, camera_location, camera_lookat, render_path):
     print(f"  -> Saved: {render_path}")
 
 
-def render_views(samples=SAMPLES):
-    """Render the drive rod from multiple angles."""
+def render_views(samples=SAMPLES, render_all_angles=False):
+    """Render the drive rod from multiple angles.
+
+    Args:
+        samples: number of render samples
+        render_all_angles: if True, render all 4 views (front/side/iso/back-left)
+                          if False, render isometric only (default)
+    """
     renders = []
 
-    # Front view: pivot pins facing camera (X-looking, Y up)
-    front_path = os.path.join(OUTPUT_DIR, "drive_rod_front.png")
-    render_view("Front View", camera_location=mm(60, 0, 0), camera_lookat=(0, 0, 0), render_path=front_path)
-    renders.append(front_path)
-
-    # Side view: profile view (Y-looking, Z up)
-    side_path = os.path.join(OUTPUT_DIR, "drive_rod_side.png")
-    render_view("Side View", camera_location=mm(0, 60, 0), camera_lookat=(0, 0, 0), render_path=side_path)
-    renders.append(side_path)
-
-    # Isometric view: 3D assembly view
+    # Isometric view: 3D assembly view (always rendered)
     iso_path = os.path.join(OUTPUT_DIR, "drive_rod_isometric.png")
     render_view("Isometric View", camera_location=mm(50, 50, 30), camera_lookat=(0, 0, 0), render_path=iso_path)
     renders.append(iso_path)
 
-    # Back/left view: 3/4 rear view
-    back_left_path = os.path.join(OUTPUT_DIR, "drive_rod_back_left.png")
-    render_view("Back/Left View", camera_location=mm(-50, 50, 20), camera_lookat=(0, 0, 0), render_path=back_left_path)
-    renders.append(back_left_path)
+    if render_all_angles:
+        # Front view: pivot pins facing camera (X-looking, Y up)
+        front_path = os.path.join(OUTPUT_DIR, "drive_rod_front.png")
+        render_view("Front View", camera_location=mm(60, 0, 0), camera_lookat=(0, 0, 0), render_path=front_path)
+        renders.append(front_path)
+
+        # Side view: profile view (Y-looking, Z up)
+        side_path = os.path.join(OUTPUT_DIR, "drive_rod_side.png")
+        render_view("Side View", camera_location=mm(0, 60, 0), camera_lookat=(0, 0, 0), render_path=side_path)
+        renders.append(side_path)
+
+        # Back/left view: 3/4 rear view
+        back_left_path = os.path.join(OUTPUT_DIR, "drive_rod_back_left.png")
+        render_view("Back/Left View", camera_location=mm(-50, 50, 20), camera_lookat=(0, 0, 0), render_path=back_left_path)
+        renders.append(back_left_path)
 
     return renders
 
@@ -347,7 +354,7 @@ def main():
     setup_render_settings(samples=32)
 
     print("\nRendering views...")
-    render_paths = render_views(samples=32)
+    render_paths = render_views(samples=32, render_all_angles=False)
 
     print("\n=== VALIDATION: Output Files (P3: File Size Range) ===")
     all_exist = True
@@ -423,15 +430,15 @@ def main():
 
         if variance <= 30:
             print(f"\n  CONSISTENCY_OK: Brightness variance {variance}/255 across angles")
-            print(f"    Front={render_brightness.get('drive_rod_front', 'N/A')}, Side={render_brightness.get('drive_rod_side', 'N/A')}, Isometric={render_brightness.get('drive_rod_isometric', 'N/A')}, Back/Left={render_brightness.get('drive_rod_back_left', 'N/A')}")
+            print(f"    Isometric={render_brightness.get('drive_rod_isometric', 'N/A')}")
         else:
             print(f"\n  BRIGHTNESS_INCONSISTENT: Variance {variance}/255 across angles (threshold: ≤30)")
-            print(f"    Front={render_brightness.get('drive_rod_front', 'N/A')}, Side={render_brightness.get('drive_rod_side', 'N/A')}, Isometric={render_brightness.get('drive_rod_isometric', 'N/A')}, Back/Left={render_brightness.get('drive_rod_back_left', 'N/A')}")
+            print(f"    Isometric={render_brightness.get('drive_rod_isometric', 'N/A')}")
             consistency_ok = False
 
     if all_exist and all_pngs_valid and all_brightness_ok and all_contrast_ok and consistency_ok:
         print("\n=== FINAL RESULT: SUCCESS ===")
-        print("All renders complete and validated:")
+        print("Isometric render complete and validated:")
         print("  - P2: Output directory writable ✓")
         print("  - P3: File sizes in range [100KB–1.5MB] ✓")
         print("  - P1: PNG files not corrupted ✓")
