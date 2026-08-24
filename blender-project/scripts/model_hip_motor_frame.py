@@ -185,11 +185,11 @@ SERVO_H = 23.2          # height (Y direction)
 SERVO_W = 12.1          # width (X direction)
 SERVO_L = 28.5          # length/depth (Z direction)
 SERVO_SPLINE_RADIUS = 2.0      # output shaft radius
-SERVO_SPLINE_LENGTH = 3.5      # output shaft extension length
+SERVO_SPLINE_LENGTH = 4.0      # output shaft extension length
 
 # Servo wheel dimensions (mounted on top of servo)
 SERVO_WHEEL_RADIUS = 35.0      # 70mm diameter wheel
-SERVO_WHEEL_THICKNESS = 5.0    # thickness of wheel (Y direction)
+SERVO_WHEEL_THICKNESS = 3.0    # thickness of wheel (Y direction)
 
 # Housing dimensions (structural frame box to contain all components)
 HOUSING_X = 120.0       # outer dimension in X (length)
@@ -199,6 +199,7 @@ HOUSING_WALL = 2.5      # wall thickness
 
 # Positioning in assembly
 SERVO_Z_OFFSET = 30.0   # height of servo above housing base
+SERVO_SHAFT_Y = 24.4    # Y-position of servo output shaft
 
 
 # ---------------------------------------------------------------------------
@@ -248,16 +249,16 @@ def build_servo(collection):
     shade_flat(obj_body)
     assign_material(obj_body, MAT_METAL())
 
-    # Output spline shaft (extends downward from center of servo bottom)
-    # Positioned at bottom center (Y=0, X=0, Z=-half_l)
+    # Output spline shaft (extends upward from servo body)
+    # Positioned at servo center, spline oriented vertically (Z axis)
     spline = make_cylinder(
         f"{PREFIX}ServoSpline",
         collection,
         SERVO_SPLINE_RADIUS,
         SERVO_SPLINE_LENGTH,
-        axis='Y',  # extends in Y direction (downward from servo body)
+        axis='Z',  # extends in Z direction (upward from servo body)
         segments=16,
-        location_mm=(0, -half_h - mm(SERVO_SPLINE_LENGTH/2), -servo_l/MM/2),
+        location_mm=(0, 0, 0),
         material=MAT_METAL()
     )
 
@@ -271,7 +272,7 @@ def build_servo_wheel(collection):
         collection,
         SERVO_WHEEL_RADIUS,
         SERVO_WHEEL_THICKNESS,
-        axis='Y',  # wheel rotates around Y axis (servo output direction)
+        axis='Z',  # wheel rotates around Z axis (spline output direction)
         segments=32,
         cap=True,
         material=MAT_METAL()
@@ -345,13 +346,11 @@ def build_assembly(collection):
     # Build servo
     servo = build_servo(collection)
     servo['body'].location = mm(0, SERVO_Z_OFFSET, 20)  # centered, elevated
-    servo['spline'].location = mm(0, SERVO_Z_OFFSET - mm(SERVO_H/2), 20)  # at servo bottom center
+    servo['spline'].location = mm(0, SERVO_SHAFT_Y, 20 + SERVO_L/2 + SERVO_SPLINE_LENGTH/2)  # at (0, 24.4mm, 36.25mm)
 
-    # Build servo wheel - positioned on top of servo body
-    # Servo body top: Y = SERVO_Z_OFFSET + SERVO_H/2 = 30 + 11.6 = 41.6mm
-    # Wheel center: Y = servo_top + wheel_radius = 41.6 + 35 = 76.6mm
+    # Build servo wheel - positioned on top of servo spline
     wheel = build_servo_wheel(collection)
-    wheel.location = mm(0, SERVO_Z_OFFSET + SERVO_H/2 + SERVO_WHEEL_RADIUS, 20)
+    wheel.location = mm(0, SERVO_SHAFT_Y, 20 + SERVO_L/2 + SERVO_SPLINE_LENGTH + SERVO_WHEEL_THICKNESS/2)  # at (0, 24.4mm, 39.75mm)
 
     return {
         'housing': housing,
