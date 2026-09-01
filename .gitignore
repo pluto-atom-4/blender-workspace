@@ -27,6 +27,7 @@ blender-project/assets/*
 !blender-project/assets/inverted_pendulum_simulation.py
 blender-project/images/
 blender-project/renders/*.mp4
+blender-project/renders/*.blend
 blender-project/work/
 
 gh-issue*.*
