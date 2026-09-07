@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# post-commit: keep code-review-graph and graphify in sync after each
+# commit. Runs as a detached background job so `git commit` returns
+# immediately (see graph-sync-helpers.sh). Must never fail the commit
+# itself — hence `set -uo pipefail`, no `-e`.
+#
+# Generated/installed by .claude/skills/graph-hooks-sync/install.sh — do
+# not edit this installed copy directly; edit
+# .claude/skills/graph-hooks-sync/hooks/post-commit and re-run install.sh.
+#
+# `code-review-graph embed` is intentionally NOT run here (Q4): the local
+# embeddings extra isn't installed on this machine.
+set -uo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+# shellcheck source=graph-sync-helpers.sh
+source "$HOOK_DIR/graph-sync-helpers.sh"
+
+JOB_NAME="post-commit"
+
+if ! graph_sync_dedup_guard "$JOB_NAME"; then
+  graph_sync_log "$JOB_NAME" "already running, skipping this trigger"
+  exit 0
+fi
+
+graph_sync_log "$JOB_NAME" "spawning incremental update (code-review-graph + graphify)"
+graph_sync_spawn_detached "$JOB_NAME" bash -c "
+  cd '${REPO_ROOT}' &&
+  code-review-graph update --skip-flows &&
+  graphify update .
+"
+
+exit 0

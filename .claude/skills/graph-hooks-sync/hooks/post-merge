@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# post-merge: keep code-review-graph and graphify in sync after `git
+# merge` or `git pull` (fetch+merge). Runs detached; never fails the
+# calling git command. Receives $1 = is-squash (1/0), unused here.
+#
+# Generated/installed by .claude/skills/graph-hooks-sync/install.sh — do
+# not edit this installed copy directly; edit
+# .claude/skills/graph-hooks-sync/hooks/post-merge and re-run install.sh.
+set -uo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+# shellcheck source=graph-sync-helpers.sh
+source "$HOOK_DIR/graph-sync-helpers.sh"
+
+JOB_NAME="post-merge"
+
+if ! graph_sync_dedup_guard "$JOB_NAME"; then
+  graph_sync_log "$JOB_NAME" "already running, skipping this trigger"
+  exit 0
+fi
+
+# Threshold logic (Q3): >5 changed files since ORIG_HEAD -> full rebuild,
+# otherwise incremental. If ORIG_HEAD can't be resolved, be conservative
+# and do a full rebuild.
+CHANGED_COUNT=999
+if git rev-parse --verify -q ORIG_HEAD >/dev/null 2>&1; then
+  CHANGED_COUNT=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null | wc -l | tr -d ' ')
+fi
+
+if [ "$CHANGED_COUNT" -gt 5 ]; then
+  graph_sync_log "$JOB_NAME" "spawning FULL rebuild (${CHANGED_COUNT} files changed since ORIG_HEAD)"
+  graph_sync_spawn_detached "$JOB_NAME" bash -c "
+    cd '${REPO_ROOT}' &&
+    code-review-graph build &&
+    graphify update . --force
+  "
+else
+  graph_sync_log "$JOB_NAME" "spawning incremental update (${CHANGED_COUNT} files changed since ORIG_HEAD)"
+  graph_sync_spawn_detached "$JOB_NAME" bash -c "
+    cd '${REPO_ROOT}' &&
+    code-review-graph update --skip-flows &&
+    graphify update .
+  "
+fi
+
+exit 0
