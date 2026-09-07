@@ -46,7 +46,17 @@
       "Bash(bash -n:*)",
       "Bash(blender --version)",
       "Bash(uv sync --extra test)",
-      "Bash(uv run --extra test pytest:*)"
+      "Bash(uv run --extra test pytest:*)",
+      "Bash(code-review-graph query *)",
+      "Bash(code-review-graph impact *)",
+      "Bash(code-review-graph detect-changes *)",
+      "Bash(code-review-graph status*)",
+      "Bash(code-review-graph update*)",
+      "Bash(code-review-graph build*)",
+      "Bash(graphify query *)",
+      "Bash(graphify explain *)",
+      "Bash(graphify affected *)",
+      "Bash(graphify update *)"
     ]
   },
   "hooks": {
