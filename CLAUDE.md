@@ -24,3 +24,22 @@ python3 scripts/context-audit.py                                # audit
 - Multi-op scripts (create object + keyframe + material in one call) work fine in a single round-trip — no need to split into multiple live calls.
 - Errors (e.g. `KeyError` from a missing object) come back as a clean `Execution Failed` result with full Python traceback — no hang, no Blender crash. Safe to probe/validate object names this way.
 - Round-trip latency is sub-second even for multi-op scripts.
+
+## Graph Intelligence Tools (code-review-graph, graphify)
+
+MCP servers registered user-level in `~/.claude/settings.json` (not repo
+`.mcp.json` — both tools are `uv tool install`-ed per-machine, not assumed
+present on every teammate's PATH). See issue #119.
+
+- **code-review-graph** — micro/structural: caller/callee tracing, blast
+  radius. DB at `.code-review-graph/graph.db` (self-gitignored). Refresh
+  after edits: `Bash(code-review-graph update)`; full rebuild after a large
+  refactor: `Bash(code-review-graph build)`.
+- **graphify** — macro/architectural: multi-modal map incl. docs/schemas.
+  Output at `graphify-out/graph.json` (gitignored globally, not per-repo).
+  Refresh: `Bash(graphify update .)`.
+
+Routing: check architecture/design questions against graphify first; once
+the relevant module is isolated, use code-review-graph for exact
+caller/callee/impact paths. If either tool errors or returns empty, fall
+back to a narrow `Grep` — don't retry the same graph query.
