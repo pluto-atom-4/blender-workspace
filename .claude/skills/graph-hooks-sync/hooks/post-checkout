@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# post-checkout: keep code-review-graph and graphify in sync after a
+# branch checkout ($3=1). File-level checkouts ($3=0) are skipped.
+# Runs detached; never fails the calling git command.
+# Args: $1=prev-head $2=new-head $3=is-branch-checkout
+#
+# Generated/installed by .claude/skills/graph-hooks-sync/install.sh — do
+# not edit this installed copy directly; edit
+# .claude/skills/graph-hooks-sync/hooks/post-checkout and re-run install.sh.
+set -uo pipefail
+
+PREV_HEAD="${1:-}"
+NEW_HEAD="${2:-}"
+IS_BRANCH_CHECKOUT="${3:-0}"
+
+# Only act on branch checkouts, not single-file checkouts.
+[ "$IS_BRANCH_CHECKOUT" = "1" ] || exit 0
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+# shellcheck source=graph-sync-helpers.sh
+source "$HOOK_DIR/graph-sync-helpers.sh"
+
+JOB_NAME="post-checkout"
+
+if ! graph_sync_dedup_guard "$JOB_NAME"; then
+  graph_sync_log "$JOB_NAME" "already running, skipping this trigger"
+  exit 0
+fi
+
+# Fresh clone: prev-head is all-zeros -> always full rebuild regardless of
+# file-count threshold (no existing graph state to update incrementally
+# from). Otherwise apply the Q3 threshold (>5 changed files -> full).
+if [[ "$PREV_HEAD" =~ ^0+$ ]]; then
+  CHANGED_COUNT=999
+else
+  CHANGED_COUNT=$(git diff --name-only "$PREV_HEAD" "$NEW_HEAD" 2>/dev/null | wc -l | tr -d ' ')
+fi
+
+if [ "$CHANGED_COUNT" -gt 5 ]; then
+  graph_sync_log "$JOB_NAME" "spawning FULL rebuild (${CHANGED_COUNT} files changed, or fresh clone)"
+  graph_sync_spawn_detached "$JOB_NAME" bash -c "
+    cd '${REPO_ROOT}' &&
+    code-review-graph build &&
+    graphify update . --force
+  "
+else
+  graph_sync_log "$JOB_NAME" "spawning incremental update (${CHANGED_COUNT} files changed)"
+  graph_sync_spawn_detached "$JOB_NAME" bash -c "
+    cd '${REPO_ROOT}' &&
+    code-review-graph update --skip-flows &&
+    graphify update .
+  "
+fi
+
+exit 0

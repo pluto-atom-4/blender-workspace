@@ -33,6 +33,21 @@ Install and configure git pre-commit hooks to enforce branch protection.
 - **Default:** Protects `main` branch by default
 - **Related:** AGENTS.md branching policy, CLAUDE.md workflow
 
+### graph-hooks-sync
+
+Install local git hooks that keep the `code-review-graph` and `graphify`
+knowledge graphs in sync on commit/merge/checkout.
+
+- **Location:** `.claude/skills/graph-hooks-sync/SKILL.md`
+- **Purpose:** Detached, incremental-by-default graph rebuilds after
+  `git commit`/`merge`/`pull`/checkout so the graphs powering issue #119's
+  MCP tools don't silently go stale.
+- **Callable by:** Coder (setup), Architect (planning)
+- **Layout note:** uses `hooks/`+`lib/` (not `pre-commit-enforce`'s flat
+  `src/`) — see SKILL.md "File layout" for the naming-clarity rationale.
+- **Install:** `.claude/skills/graph-hooks-sync/install.sh` (per clone/machine, writes to local `.git/hooks/` only)
+- **Related:** CLAUDE.md "Graph Intelligence Tools", issue #119/#121
+
 ## Blender Scripts
 
 Standalone Python automations run via the `run_blender_python` MCP tool.
